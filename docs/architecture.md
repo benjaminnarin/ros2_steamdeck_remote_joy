@@ -140,22 +140,23 @@ Everything runs over **any IP link**: Wi-Fi in the MVP, and Ethernet/USB tetheri
 
 | # | Question | Resolved by |
 |---|----------|-------------|
-| O1 | Does gilrs see the Steam Input gamepad correctly when launched through Steam (Game Mode)? | Spike |
-| O2 | Does egui/eframe run well under gamescope (fullscreen, touch, vsync)? | Spike |
-| O3 | With TLS on, does best-effort data avoid head-of-line blocking during Wi-Fi stalls? **Narrowed:** the vendored zenoh-c is built with `transport_quic_datagram`, and links take a reliability setting (`?rel=0`). Plan: best-effort traffic travels as **QUIC datagrams** (unreliable, still TLS) on a second link next to the reliable one (`transport_multilink` is built in). The spike confirms the exact endpoint syntax and the stall behaviour. | Spike |
+| O1 | ✅ **Answered (M0):** gilrs sees exactly one pad, `Steam Virtual Gamepad` (Xbox 360, SDL mapping). All 15 buttons, sticks and analog triggers are correct. X axes need negating. Back grips L4/R4/L5/R5 send nothing until the Steam Input layout maps them. Resting stick noise is up to ±0.08, so the deadzone is 0.12. | Done |
+| O2 | ✅ **Answered (M0):** eframe 0.37 runs fullscreen at 1280×800 under gamescope, touch works, and video plays smoothly at 30 fps. | Done |
+| O3 | ✅ **Answered (M0):** with default QUIC, a 1 s stall replayed every queued echo up to 1.64 s late (stale burst). `?rel=0` on a second link didn't help. **`?mixed_rel=1` on both the listener and the endpoint** fixes it: 1.0, 1.5 and 3 s stalls show **0 stale messages**, lost messages are simply dropped, and a 1.5 s stall recovers without reconnecting. A small residual backlog (≤ about 170 ms) comes from Zenoh's send queue. | Done |
 | O4 | DSCP and socket buffers. **Partly answered:** Zenoh documents `#dscp=` for TCP/UDP links and `so_sndbuf`/`so_rcvbuf` for TCP/TLS, but not for QUIC. Fallback for robot → Deck traffic: mark DSCP with an `nftables` rule on UDP port 7450. The Deck → robot direction is low-bandwidth, and marking it would need root on the Deck, so it's skipped. | Spike |
 | O5 | ✅ **Answered:** Jazzy's `zenoh_cpp_vendor` pins zenoh-c/zenoh-cpp to **1.10.1** (plus fixes), built with its default features (TCP, UDP, TLS, QUIC, QUIC datagrams, multilink). `rmw_zenohd` reads `ZENOH_ROUTER_CONFIG_URI`, so it works as our router with `router.json5`. The Deck pins the `zenoh` crate to `=1.10.1`. The spike confirms that crates.io 1.10.1 interoperates with the vendored build. | Done; recheck on Jazzy syncs |
 | O6 | ✅ **Answered:** access-control subjects support `cert_common_names` (plus `interfaces` and `link_protocols`). ZIDs aren't authenticated, so they're never used for access. `low_pass_filter` (per `key_exprs`, `size_limit`) provides our per-key payload limits. | Done |
 | O7 | ✅ **Mostly answered** from source: `game_controller_node` publishes **6 axes / 21 buttons** in SDL order, with all axes inverted so stick up/left = **+1** (same as our wire format). Triggers come out as **0 released → −1.0 fully pressed**, so the gateway maps our 0..1 to 0..−1. `teleop_twist_joy` parameters: `require_enable_button`, `enable_button`, `enable_turbo_button`, `axis_linear.x`, `scale_linear(_turbo).x`, `axis_angular.yaw`, `publish_stamped_twist` (default `false`), `frame`. Confirm trigger sign on hardware in M1. | M1 (quick check) |
 | O14 | ✅ **Answered (no):** community reports say SteamOS doesn't resolve `.local` out of the box (mDNS is off in the read-only image). Robots use a **fixed IP**. If names are wanted later, the Deck app can resolve mDNS itself (`mdns-sd` crate) without touching SteamOS. | Done |
-| O15 | Zenoh's default link lease is **10 s**, so after an abrupt Wi-Fi loss the Deck may take up to 10 s to notice and reconnect, and a vanished Deck's liveliness token lingers that long. Plan: lease **2 s** (keep-alive every 500 ms) on the Deck and robot endpoints. The spike checks this doesn't cause false disconnects on normal Wi-Fi. | Spike |
+| O15 | ✅ **Answered (M0):** with a 2 s lease and the faster retry, Zenoh reconnects about **0.8 s** after Wi-Fi returns. After airplane mode, the total is about 5.5 s, dominated by SteamOS rescanning (3.8 s) and associating (0.9 s). No false disconnects on normal Wi-Fi. | Done |
+| O16 | Natural Wi-Fi delay spikes of 300–500 ms with no loss, likely Wi-Fi power saving (on at both ends during M0). Handled by the late-control guard ([interface.md § Rules](interface.md#rules)). Re-measure with power saving off. | M1 |
 | O13 | Drive stack not chosen yet: ros2_control `diff_drive_controller` (`TwistStamped`) or a custom driver (`Twist`). The launch argument `cmd_vel_stamped` supports both, and either way the base must provide the stale-command timeout and speed limit. | Before M1 on the real robot |
 
 Post-MVP open items (O8–O12) are in [future.md](future.md#post-mvp-decisions-and-open-items).
 
 ### M0 spike
 
-On the real Deck and Wi-Fi. Pass criteria:
+On the real Deck and Wi-Fi. **Status: passed** (2026-10-31; details and numbers in [spike/README.md](../spike/README.md)). Not yet done: video at the edge of range, and the `pair` → bundle flow, which needs the real gateway. Pass criteria:
 
 | Check | Pass if |
 |-------|---------|

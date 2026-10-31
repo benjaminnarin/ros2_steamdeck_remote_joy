@@ -87,7 +87,7 @@ Steam Input presents the Deck's controls as a standard gamepad, so the app is la
 | **Menu** tap (released without View) | Deck | Opens or closes the panel |
 | In panel: D-pad / A / touch | Deck | Navigate / select. **Driving input is sent neutral while the panel is open.** |
 
-Input processing: 0.08 radial stick deadzone (rescaled), triggers normalized to 0..1.
+Input processing: 0.12 radial stick deadzone (rescaled; the Deck's sticks rest at up to ±0.08), triggers normalized to 0..1, and X axes negated so left = +1. gilrs sees a single `Steam Virtual Gamepad`. The back grips only produce input once the Steam Input layout maps them (L4 → LB).
 
 ## Threads
 

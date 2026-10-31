@@ -1,6 +1,6 @@
 # Robot side
 
-ROS 2 Jazzy, x86 / Ubuntu 24.04. Three processes, started by one launch file:
+ROS 2 Jazzy (Ubuntu 24.04) or Lyrical (Ubuntu 26.04, the initial test robot), x86. Both vendor Zenoh 1.10.1. Three processes, started by one launch file:
 
 | Process | Package | Language |
 |---------|---------|----------|
@@ -50,7 +50,7 @@ robot/deck_sim/                  # ament_python: development and CI without a re
 
 ## Zenoh router
 
-- Listens on `quic/0.0.0.0:7450` (TLS, client certificates required) for Decks, and on `tcp/127.0.0.1:7451` for the local processes.
+- Listens on `quic/0.0.0.0:7450?mixed_rel=1` (TLS, client certificates required; `mixed_rel=1` is mandatory, see [interface.md § Connection](interface.md#connection)) for Decks, and on `tcp/127.0.0.1:7451` for the local processes.
 - Access control as in [interface.md § Security](interface.md#security). Payload size limits per key.
 - Multicast scouting off. It's a separate key space from any `rmw_zenoh` router the robot may run for ROS itself (that one uses 7447 by default).
 - Started by the launch file and respawned if it exits.
@@ -85,7 +85,7 @@ Zenoh side:
 - Publishes `rj/v1/robot_state`: on each owner `Control`, and at 5 Hz otherwise.
 - Answers the queryables `rj/v1/clear_stop` and `rj/v1/info`.
 
-Rules (ownership, 250 ms watchdog, REARM after short drops, stop latch, starts latched, action gating) are in [interface.md § Rules](interface.md#rules). **STOP is teleop-only:** it neutralizes `/joy` and gates `moves_robot` actions. Other `cmd_vel` sources can opt in through `steamdeck/stop_latched`, for example as a `twist_mux` lock. The node uses a steady-clock timer at 50 Hz for neutral output, independent of message arrival.
+Rules (ownership, 250 ms watchdog, REARM after short drops, stop latch, starts latched, action gating) are in [interface.md § Rules](interface.md#rules). **STOP is teleop-only:** it neutralizes `/joy` and gates `moves_robot` actions. Other `cmd_vel` sources can opt in through `steamdeck/stop_latched`, for example as a `twist_mux` lock. The node uses a steady-clock timer at 50 Hz for neutral output, independent of message arrival. It also applies the **late-control guard** (`max_control_delay_ms`, default 150).
 
 ### Status
 
@@ -124,6 +124,7 @@ deck_gateway:
     robot_name: mybot
     watchdog_ms: 250
     resume_grace_ms: 1000        # drops shorter than this resume via deadman re-press (REARM)
+    max_control_delay_ms: 150    # late-control guard: controls delayed more than this vs. the recent minimum are ignored
     status_rate_hz: 2.0
     status_items: |               # YAML string → parsed by the node
       - {key: battery.pct, label: Battery, topic: /battery_state, type: BatteryState,

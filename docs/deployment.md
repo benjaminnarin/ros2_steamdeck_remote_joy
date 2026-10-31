@@ -9,7 +9,7 @@
 
 Releases are git tags `vX.Y.Z`. Within an interface version, the Deck and the robot can be upgraded independently ([interface.md § Versioning](interface.md#versioning)). The Deck tells you if the robot needs a newer app.
 
-## Robot (x86, Ubuntu 24.04, ROS 2 Jazzy)
+## Robot (x86, Ubuntu 24.04 + ROS 2 Jazzy, or Ubuntu 26.04 + ROS 2 Lyrical)
 
 ### Build
 
@@ -133,7 +133,7 @@ Steam identifies a Non-Steam Game by its target path and name, and ties the cont
 
 1. **Never change the launch path or the name.** Steam always points at `~/.local/bin/steamdeck-remote-joy`, and the entry is always named **Steam Deck Remote Joy**. Version numbers only appear under `versions/`.
 2. **Switch versions atomically.** Extract into `versions/vX.Y.Z/`, then repoint `current` with `ln -sfn`. Never `cp` over a binary that might be running ("Text file busy").
-3. **Add to Steam only once.** Run `steamos-add-to-steam` only if no shortcut for the launch path exists yet (search for it in `~/.steam/steam/userdata/*/config/shortcuts.vdf`). Otherwise you get a duplicate entry with no layout.
+3. **Add to Steam only once, using the `.desktop` file.** `steamos-add-to-steam` rejects a bare script or binary when run over SSH ("Unsupported file type", because `kmimetypefinder` can't classify it there), but a `.desktop` entry always works (verified in M0). Run it only if no shortcut for the launch path exists yet (search for it in `~/.steam/steam/userdata/*/config/shortcuts.vdf`). Otherwise you get a duplicate entry with no layout.
 4. **Keep the previous two versions** for rollback.
 5. **Be safe to re-run.**
 

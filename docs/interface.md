@@ -6,8 +6,8 @@ The Deck and the robot talk over **Zenoh**, with **Protobuf** payloads. The `.pr
 
 | | |
 |--|--|
-| Robot endpoint | `quic/<host>:7450`. TLS 1.3, the Deck must present a client certificate (mTLS). Two links per session (multilink): reliable streams for reliable keys, and **QUIC datagrams** (`?rel=0`) for best-effort keys, so a lost packet never holds up newer control or video. *Open item O3:* the spike confirms the endpoint syntax and stall behaviour, with `tls/<host>:7450` as the alternative. |
-| Lease | 2 s link lease, keep-alive every 500 ms, on both the Deck and the robot listener (Zenoh's default of 10 s is too slow to notice a dead link). Open item O15. |
+| Robot endpoint | `quic/<host>:7450?mixed_rel=1`. TLS 1.3, and the Deck must present a client certificate (mTLS). **`mixed_rel=1` is required on both the robot's listener and the Deck's endpoint.** It negotiates one QUIC connection that carries reliable keys on QUIC streams and best-effort keys as **QUIC datagrams**. Without it (the default), best-effort data rides the reliable streams and a 1 s stall replays as a burst of stale data up to 1.6 s old (M0 spike). |
+| Lease and reconnect | 2 s link lease with keep-alive every 500 ms, on both sides (Zenoh's default is 10 s). The Deck reconnects with `connect/retry = {period_init_ms: 200, period_max_ms: 1000, period_increase_factor: 1.5}`, `connect/exit_on_failure: false` and `connect/timeout_ms: -1`. Measured: Zenoh is back up within about 0.8 s of Wi-Fi returning. |
 | Zenoh version | **1.10.1**, matching Jazzy's `zenoh_cpp_vendor`. The Deck crate needs the `transport_quic`, `transport_tls` and `transport_quic_datagram` features. |
 | Local endpoint | `tcp/127.0.0.1:7451`, used only by `deck_gateway` and `deck_video`. Not reachable from the network. |
 | Deck mode | Zenoh `client`, connecting only to the robot endpoint. Multicast scouting off. |
@@ -122,7 +122,7 @@ message VideoFrame {
 
 ### Axis and button indices
 
-Same order as ROS 2 `joy`'s `game_controller_node` (SDL GameController). On the wire, +1 = left/up (same as `joy`), and triggers run 0 (released) to 1 (pressed). `deck_gateway` publishes `Joy` exactly like `game_controller_node`: 6 axes and 21 buttons, sticks unchanged, and **triggers mapped to 0 (released) → −1.0 (pressed)** (confirm the sign on hardware, O7).
+Same order as ROS 2 `joy`'s `game_controller_node` (SDL GameController). On the wire, +1 = left/up (same as `joy`), and triggers run 0 (released) to 1 (pressed). The Deck reads gilrs, which reports right = +1 on the X axes, so the Deck **negates LX and RX** (Y is already up = +1, measured on the Deck). `deck_gateway` publishes `Joy` exactly like `game_controller_node`: 6 axes and 21 buttons, sticks unchanged, and **triggers mapped to 0 (released) → −1.0 (pressed)** (confirm the sign on hardware, O7).
 
 | Axis | | Axis | |
 |--:|--|--:|--|
@@ -159,6 +159,13 @@ Free buttons reach the robot only through `/joy`, so they inherit its gating aut
 **Disconnect (Deck):** on quit, send `Stop` (reliable), withdraw the liveliness token, then close the session.
 
 **Watchdog (gateway):** no valid `Control` from the owner for 250 ms, or the owner's liveliness token disappearing → state `NO_CONTROL`, and neutral `Joy` at 50 Hz.
+
+**Late-control guard (gateway):** Wi-Fi itself sometimes delivers packets 300–500 ms late without losing them (seen in the M0 spike). The gateway discards such controls without needing synchronized clocks:
+- For each `Control`, compute `d = robot_arrival_us − deck_time_us`. The two clocks are unrelated, so only changes in `d` matter.
+- Keep `d_min`, the lowest `d` seen in the last 10 s.
+- If `d − d_min > max_control_delay_ms` (default 150), the message is **late**: it isn't applied, and it doesn't feed the watchdog.
+
+A stretch of late controls therefore looks like a short drop, and is handled through REARM.
 
 **Resume after a drop (gateway):** when the owner's `Control` comes back (same `session_id`):
 - **Gap < `resume_grace_ms` (1000):** state `REARM`. Neutral `Joy` continues until a `Control` with LB and RB released is followed by one with the deadman (LB or RB) pressed, then `OK`. No STOP clear is needed.

@@ -5,7 +5,7 @@ Drive a **ROS 2** robot from a **Steam Deck** over Wi-Fi: live camera, robot sta
 | Part | Runs on | Built with | Does |
 |------|---------|------------|------|
 | **Controller app** (`controller/`) | Steam Deck (SteamOS) | Rust, egui, Zenoh, **no ROS** | Reads the Deck's controls, shows camera, status and actions, sends control input |
-| **Robot gateway** (`robot/`) | Robot (x86, Ubuntu 24.04, ROS 2 Jazzy) | C++, rclcpp, zenoh-cpp | Converts between the Deck interface and standard ROS messages. Owns the safety logic (watchdog, stop latch). Streams the camera. |
+| **Robot gateway** (`robot/`) | Robot (x86, ROS 2 Jazzy or Lyrical) | C++, rclcpp, zenoh-cpp | Converts between the Deck interface and standard ROS messages. Owns the safety logic (watchdog, stop latch). Streams the camera. |
 | **Interface** (`interface/`) | both | Protobuf | The versioned Deck ↔ robot API |
 
 ```
@@ -32,7 +32,7 @@ Details: [docs/architecture.md](docs/architecture.md).
 
 | | Scope |
 |--|-------|
-| **M0 Spike** | gilrs + egui in Game Mode, Zenoh control/video behaviour on the real Wi-Fi ([architecture.md § spike](docs/architecture.md#m0-spike)) |
+| **M0 Spike** ✅ | gilrs + egui in Game Mode, Zenoh control/video behaviour on the real Wi-Fi. Passed: [spike/README.md](spike/README.md) |
 | **M1 Drive** | Deck controls → `/joy`, deadman, turbo, watchdog, stop latch, auto-reconnect with REARM, handover safety rules. One robot, Deck and robot on the same network. |
 | **M2 Video** | One camera, JPEG 480 px wide at 30 fps, latency overlay |
 | **M3 Status** | Robot status panel (battery, speed, diagnostics, chosen topics) |
@@ -97,6 +97,7 @@ Then launch **Steam Deck Remote Joy** from Game Mode. Full steps: [docs/deployme
 | [robot.md](docs/robot.md) | `deck_gateway`, `deck_video`, router, configuration |
 | [deployment.md](docs/deployment.md) | Build, pairing, Wi-Fi setup, install, commissioning |
 | [future.md](docs/future.md) | Beyond the milestones, plus fallback designs |
+| [devlog.md](docs/devlog.md) | How the design evolved and how it was tested, kept for a write-up |
 
 ## Status
 
