@@ -142,12 +142,13 @@ Everything runs over **any IP link**: Wi-Fi in the MVP, and Ethernet/USB tetheri
 |---|----------|-------------|
 | O1 | Does gilrs see the Steam Input gamepad correctly when launched through Steam (Game Mode)? | Spike |
 | O2 | Does egui/eframe run well under gamescope (fullscreen, touch, vsync)? | Spike |
-| O3 | With TLS on, does best-effort data avoid head-of-line blocking (data held up behind a lost packet) on Zenoh's QUIC link during Wi-Fi stalls? If not, which link setup does? | Spike |
-| O4 | Can Zenoh links set DSCP (Wi-Fi priority marking) and socket buffer sizes? | Zenoh docs + spike |
-| O5 | Which Zenoh version ships in Jazzy's `zenoh_cpp_vendor`? The Deck's `zenoh` crate is pinned to match. Is `rmw_zenohd` usable as a plain router with our config, or do we ship a matching `zenohd`? | Build setup |
-| O6 | Zenoh access control by certificate common name: confirm the syntax for our pinned version | Build setup |
-| O7 | ROS 2 `joy` axis signs and trigger range. `teleop_twist_joy` parameter names in Jazzy, including `publish_stamped_twist` | M1 |
-| O14 | Does SteamOS resolve `.local` (mDNS) hostnames? Until confirmed, robots use a fixed IP. | M1 |
+| O3 | With TLS on, does best-effort data avoid head-of-line blocking during Wi-Fi stalls? **Narrowed:** the vendored zenoh-c is built with `transport_quic_datagram`, and links take a reliability setting (`?rel=0`). Plan: best-effort traffic travels as **QUIC datagrams** (unreliable, still TLS) on a second link next to the reliable one (`transport_multilink` is built in). The spike confirms the exact endpoint syntax and the stall behaviour. | Spike |
+| O4 | DSCP and socket buffers. **Partly answered:** Zenoh documents `#dscp=` for TCP/UDP links and `so_sndbuf`/`so_rcvbuf` for TCP/TLS, but not for QUIC. Fallback for robot → Deck traffic: mark DSCP with an `nftables` rule on UDP port 7450. The Deck → robot direction is low-bandwidth, and marking it would need root on the Deck, so it's skipped. | Spike |
+| O5 | ✅ **Answered:** Jazzy's `zenoh_cpp_vendor` pins zenoh-c/zenoh-cpp to **1.10.1** (plus fixes), built with its default features (TCP, UDP, TLS, QUIC, QUIC datagrams, multilink). `rmw_zenohd` reads `ZENOH_ROUTER_CONFIG_URI`, so it works as our router with `router.json5`. The Deck pins the `zenoh` crate to `=1.10.1`. The spike confirms that crates.io 1.10.1 interoperates with the vendored build. | Done; recheck on Jazzy syncs |
+| O6 | ✅ **Answered:** access-control subjects support `cert_common_names` (plus `interfaces` and `link_protocols`). ZIDs aren't authenticated, so they're never used for access. `low_pass_filter` (per `key_exprs`, `size_limit`) provides our per-key payload limits. | Done |
+| O7 | ✅ **Mostly answered** from source: `game_controller_node` publishes **6 axes / 21 buttons** in SDL order, with all axes inverted so stick up/left = **+1** (same as our wire format). Triggers come out as **0 released → −1.0 fully pressed**, so the gateway maps our 0..1 to 0..−1. `teleop_twist_joy` parameters: `require_enable_button`, `enable_button`, `enable_turbo_button`, `axis_linear.x`, `scale_linear(_turbo).x`, `axis_angular.yaw`, `publish_stamped_twist` (default `false`), `frame`. Confirm trigger sign on hardware in M1. | M1 (quick check) |
+| O14 | ✅ **Answered (no):** community reports say SteamOS doesn't resolve `.local` out of the box (mDNS is off in the read-only image). Robots use a **fixed IP**. If names are wanted later, the Deck app can resolve mDNS itself (`mdns-sd` crate) without touching SteamOS. | Done |
+| O15 | Zenoh's default link lease is **10 s**, so after an abrupt Wi-Fi loss the Deck may take up to 10 s to notice and reconnect, and a vanished Deck's liveliness token lingers that long. Plan: lease **2 s** (keep-alive every 500 ms) on the Deck and robot endpoints. The spike checks this doesn't cause false disconnects on normal Wi-Fi. | Spike |
 | O13 | Drive stack not chosen yet: ros2_control `diff_drive_controller` (`TwistStamped`) or a custom driver (`Twist`). The launch argument `cmd_vel_stamped` supports both, and either way the base must provide the stale-command timeout and speed limit. | Before M1 on the real robot |
 
 Post-MVP open items (O8–O12) are in [future.md](future.md#post-mvp-decisions-and-open-items).
@@ -162,6 +163,7 @@ On the real Deck and Wi-Fi. Pass criteria:
 | Control Deck → router → minimal gateway | Median ≤ 20 ms one way. **No stale burst** after a 1–2 s Wi-Fi stall (e.g. walking out of range and back). |
 | Video: 480p JPEG at 30 fps through Zenoh | > 95% of frames arrive at normal range, latency close to the per-stage estimate |
 | Setup | `pair` → copy bundle → `robot add --bundle` works end to end |
+| Lease (O15) | With a 2 s lease, a 3 s Wi-Fi loss is detected and reconnected within ~3 s, and normal driving shows no false disconnects |
 | Reconnect | Brief Wi-Fi blip → REARM, then resumes after deadman re-press. Drop > 1 s → the app reconnects by itself and the robot is STOPPED (`link_lost`). |
 
 If control or video fail, those flows switch to the fallback transport ([future.md](future.md#fallback-transports)), and Zenoh stays for status, actions and info.

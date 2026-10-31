@@ -54,7 +54,8 @@ robot/deck_sim/                  # ament_python: development and CI without a re
 - Access control as in [interface.md § Security](interface.md#security). Payload size limits per key.
 - Multicast scouting off. It's a separate key space from any `rmw_zenoh` router the robot may run for ROS itself (that one uses 7447 by default).
 - Started by the launch file and respawned if it exits.
-- Which binary: `rmw_zenohd` with our config, or a `zenohd` of the same version. Open item O5.
+- Binary: **`rmw_zenohd`** (from `ros-jazzy-rmw-zenoh-cpp`, Zenoh 1.10.1) started with `ZENOH_ROUTER_CONFIG_URI=<share>/config/router.json5`. It's a separate process and port from any `rmw_zenohd` the robot runs for ROS itself.
+- `router.json5`: 2 s lease, `access_control` by `cert_common_names`, `low_pass_filter` size limits per key, and on the robot an optional `nftables` rule that marks outgoing UDP 7450 with DSCP (open item O4).
 
 ## `deck_gateway`
 
@@ -152,7 +153,7 @@ A composable node, `deck_video::VideoPublisher`.
 | `jpeg_quality` | `70` | |
 
 Behavior:
-- **On demand:** a Zenoh matching listener on `rj/v1/video`. With no Deck subscribed, it unsubscribes from the camera and costs nothing.
+- **On demand:** a Zenoh matching listener on `rj/v1/video` (`Publisher::declare_matching_listener`, part of zenoh-cpp's stable API on the zenoh-c backend). With no Deck subscribed, it unsubscribes from the camera and costs nothing.
 - **No stale frames:** sensor-data QoS (best effort, **depth 1**). A timer at `fps` takes the latest image, resizes it, and JPEG-encodes it (OpenCV with libjpeg-turbo). If encoding falls behind, frames are skipped.
 - **Zero-copy option:** load it into the camera driver's component container to get images in-process. A camera-driver crash then also stops video, which is fine because video isn't on the safety path. Default: its own container process.
 - **Timestamps:** capture time converted from the image's ROS `header.stamp` to the monotonic clock (`steady_now − (ros_now − stamp)`), plus capture → encode time, written into `VideoFrame`.

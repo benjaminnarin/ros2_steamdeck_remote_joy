@@ -6,7 +6,9 @@ The Deck and the robot talk over **Zenoh**, with **Protobuf** payloads. The `.pr
 
 | | |
 |--|--|
-| Robot endpoint | `quic/<host>:7450`. TLS 1.3, the Deck must present a client certificate (mTLS). *Open item O3:* confirm stall behaviour, with `tls/<host>:7450` as the alternative. |
+| Robot endpoint | `quic/<host>:7450`. TLS 1.3, the Deck must present a client certificate (mTLS). Two links per session (multilink): reliable streams for reliable keys, and **QUIC datagrams** (`?rel=0`) for best-effort keys, so a lost packet never holds up newer control or video. *Open item O3:* the spike confirms the endpoint syntax and stall behaviour, with `tls/<host>:7450` as the alternative. |
+| Lease | 2 s link lease, keep-alive every 500 ms, on both the Deck and the robot listener (Zenoh's default of 10 s is too slow to notice a dead link). Open item O15. |
+| Zenoh version | **1.10.1**, matching Jazzy's `zenoh_cpp_vendor`. The Deck crate needs the `transport_quic`, `transport_tls` and `transport_quic_datagram` features. |
 | Local endpoint | `tcp/127.0.0.1:7451`, used only by `deck_gateway` and `deck_video`. Not reachable from the network. |
 | Deck mode | Zenoh `client`, connecting only to the robot endpoint. Multicast scouting off. |
 | Trust | The Deck trusts only the robot's private CA from its pairing bundle. The router accepts only client certificates on its allowed list ([§ Security](#security)). |
@@ -120,7 +122,7 @@ message VideoFrame {
 
 ### Axis and button indices
 
-Same order as ROS 2 `joy`'s `game_controller_node` (SDL GameController). On the wire, +1 = left/up, and triggers run 0 (released) to 1 (pressed). `deck_gateway` converts to `joy`'s conventions (open item O7).
+Same order as ROS 2 `joy`'s `game_controller_node` (SDL GameController). On the wire, +1 = left/up (same as `joy`), and triggers run 0 (released) to 1 (pressed). `deck_gateway` publishes `Joy` exactly like `game_controller_node`: 6 axes and 21 buttons, sticks unchanged, and **triggers mapped to 0 (released) → −1.0 (pressed)** (confirm the sign on hardware, O7).
 
 | Axis | | Axis | |
 |--:|--|--:|--|
