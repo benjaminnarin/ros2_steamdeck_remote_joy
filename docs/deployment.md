@@ -1,0 +1,214 @@
+# Deployment
+
+```
+1. Robot:   build  ─►  network setup (stable address)  ─►  pair (per Deck)  ─►  boot service
+2. Dev box: build Deck tarball
+3. Deck:    join the network  ─►  install.sh  ─►  robot add --bundle  ─►  add to Steam + layout
+4. Both:    probe  ─►  video tuning  ─►  commissioning checklist (wheels off the ground)
+```
+
+Releases are git tags `vX.Y.Z`. Within an interface version, the Deck and the robot can be upgraded independently ([interface.md § Versioning](interface.md#versioning)). The Deck tells you if the robot needs a newer app.
+
+## Robot (x86, Ubuntu 24.04, ROS 2 Jazzy)
+
+### Build
+
+```bash
+sudo apt install ros-jazzy-ros-base ros-jazzy-teleop-twist-joy ros-jazzy-cv-bridge \
+                 ros-jazzy-zenoh-cpp-vendor ros-jazzy-rmw-zenoh-cpp \
+                 libopencv-dev libprotobuf-dev protobuf-compiler openssl \
+                 python3-colcon-common-extensions
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
+git clone --branch vX.Y.Z <repo-url> ros2_steamdeck_remote_joy
+cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y
+colcon build --packages-up-to deck_gateway deck_video
+source install/setup.bash
+```
+
+`controller/` has a `COLCON_IGNORE` file, so colcon skips it. The robot's own ROS middleware doesn't matter: Fast DDS, Cyclone or `rmw_zenoh` all work, because the gateway uses `rclcpp` for ROS and a separate Zenoh session for the Deck.
+
+### Pair each Deck
+
+```bash
+ros2 run deck_gateway pair --deck deck1 --host 192.168.1.50
+# first run: creates the robot CA + server cert (names/addresses from --host) in ~/.config/deck_gateway/tls/
+# every run: issues a client cert with a unique CN (e.g. deck1-3fa9c2), adds it to the router ACL → ~/deck1.bundle.tar
+ros2 run deck_gateway pair --list
+ros2 run deck_gateway pair --revoke deck1      # removes its CN from the ACL, reloads the router (connected Decks drop)
+```
+
+Use the robot's stable name and/or address on the shared network ([§ Network setup](#network-setup)). Add a `--host` for anything else the Deck might use, such as a bench Ethernet address.
+
+This is the **file pairing method**, the only one in the MVP. Online pairing methods are post-MVP ([future.md](future.md#online-enrollment)).
+
+### Run on boot
+
+`deploy/systemd/deck-gateway.service`:
+
+```ini
+[Unit]
+Description=Steam Deck remote gateway (ROS 2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=robot
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash && \
+  source ~/ros2_ws/install/setup.bash && \
+  exec ros2 launch deck_gateway robot.launch.py image_topic:=/camera/image_raw'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo cp deploy/systemd/deck-gateway.service /etc/systemd/system/   # edit User / image_topic first
+sudo systemctl daemon-reload && sudo systemctl enable --now deck-gateway
+journalctl -u deck-gateway -f
+```
+
+If the robot already has a bring-up launch file, include `robot.launch.py` from it instead. The gateway always starts with STOP latched.
+
+## Network setup
+
+**MVP: the Deck and the robot are on the same network.** Any of these works:
+
+| Option | Notes |
+|--------|-------|
+| An existing **5 GHz** Wi-Fi network (robot on Wi-Fi or Ethernet) | Simplest if coverage is good where the robot drives |
+| A **dedicated 5 GHz router** for the robot(s) | Best reliability: no other traffic |
+| The robot's **own hotspot**, joined from SteamOS Wi-Fi settings | Good for one robot in the field: `nmcli device wifi hotspot ifname wlan0 band a ssid mybot-ap password '<passphrase>'`. The robot is then `10.42.0.1`. |
+
+| Do | Why |
+|----|-----|
+| Use **5 GHz**, on an uncrowded channel | Bandwidth and interference |
+| **Wi-Fi power saving off on the robot** (`nmcli connection modify <conn> 802-11-wireless.powersave 2`) **and the Deck** (see below) | Power saving causes periodic 100–300 ms stalls |
+| Give the robot a **fixed IP** with a DHCP reservation on the router, and pass it to `pair --host`. Use `mybot.local` only once it's confirmed that SteamOS resolves `.local` names (open item O14). | The Deck's profile and the server certificate both use it |
+| Open **UDP 7450** on the robot (plus **TCP 7450** if using the `tls/` endpoint): `sudo ufw allow 7450/udp` | Zenoh endpoint |
+
+**Deck:** join the network in SteamOS Wi-Fi settings as usual. Then Settings → System → enable Developer Mode, and Settings → Developer → turn off **Wi-Fi Power Management**.
+
+*Post-MVP:* one access point per robot with the app managing Wi-Fi (an `ap` setup tool), and an optional Bluetooth backup ([future.md](future.md#connecting-switching-and-pairing-post-mvp)).
+
+## Steam Deck
+
+### Build the tarball (dev machine)
+
+```bash
+./controller/packaging/build.sh     # cargo build --release in an Ubuntu 22.04 container
+# → dist/steamdeck-remote-joy-vX.Y.Z-x86_64.tar.gz (binary, install.sh, uninstall.sh, .desktop, steam_input/)
+```
+
+The build uses an older distro so the binary doesn't require a newer glibc than SteamOS has. It links only system libraries already on SteamOS (GL/EGL, X11/Wayland, udev). The `zenoh` crate version is checked against `interface/ZENOH_VERSION`.
+
+### Install (Deck, Desktop Mode → Konsole)
+
+```bash
+tar xf ~/steamdeck-remote-joy-vX.Y.Z-x86_64.tar.gz -C ~ && ~/steamdeck-remote-joy/install.sh
+scp robot@192.168.1.50:deck1.bundle.tar ~/
+steamdeck-remote-joy robot add --bundle ~/deck1.bundle.tar && rm ~/deck1.bundle.tar
+steamdeck-remote-joy probe     # expect: Info (robot name, actions), state STOPPED, RTT a few ms, video ~30 fps
+```
+
+Everything lives in `/home`, so SteamOS updates don't remove it.
+
+### Install layout
+
+```
+~/.local/share/steamdeck-remote-joy/
+├── versions/
+│   ├── v0.1.0/steamdeck-remote-joy
+│   └── v0.2.0/steamdeck-remote-joy
+└── current -> versions/v0.2.0
+~/.local/bin/steamdeck-remote-joy -> ~/.local/share/steamdeck-remote-joy/current/steamdeck-remote-joy
+~/.local/share/applications/steamdeck-remote-joy.desktop   # Exec=~/.local/bin/steamdeck-remote-joy
+~/.config/steamdeck-remote-joy/                            # config.toml + robots/<robot_id>/ profiles (0700)
+```
+
+### Stable-path rules: the Steam entry is added once
+
+Steam identifies a Non-Steam Game by its target path and name, and ties the controller layout, artwork and settings to that entry. So `install.sh` must:
+
+1. **Never change the launch path or the name.** Steam always points at `~/.local/bin/steamdeck-remote-joy`, and the entry is always named **Steam Deck Remote Joy**. Version numbers only appear under `versions/`.
+2. **Switch versions atomically.** Extract into `versions/vX.Y.Z/`, then repoint `current` with `ln -sfn`. Never `cp` over a binary that might be running ("Text file busy").
+3. **Add to Steam only once.** Run `steamos-add-to-steam` only if no shortcut for the launch path exists yet (search for it in `~/.steam/steam/userdata/*/config/shortcuts.vdf`). Otherwise you get a duplicate entry with no layout.
+4. **Keep the previous two versions** for rollback.
+5. **Be safe to re-run.**
+
+*Future: Flatpak packaging ([future.md](future.md#flatpak-packaging)).*
+
+### Add to Steam
+
+1. If it wasn't added automatically: Steam → *Add a Non-Steam Game* → **Steam Deck Remote Joy**.
+2. *Controller Settings* → use the template from `steam_input/`. Or start from the **Gamepad** template and map **L4 → Left Bumper**.
+3. Go back to Game Mode and launch it. You should see the camera and a **STOPPED** banner.
+
+*To find out:* whether the Steam Input layout can be installed from a file. Until then, step 2 is manual.
+
+## Video tuning
+
+1. Open the **debug overlay** (tap the top bar) and drive around the area you'll actually use. Check *frames received* (aim for > 95%) and the latency of each stage.
+2. **Glass-to-glass:** point the robot's camera at a millisecond stopwatch and take one photo that shows both the stopwatch and the Deck screen.
+3. If capture → encoded is high, or glass-to-glass is much higher than the overlay's capture → shown, reduce the camera driver's buffer count ([robot.md](robot.md#camera-driver-settings)).
+4. If frame delivery is low, check the Wi-Fi setup first, then lower `jpeg_quality` or `max_width`.
+5. Write down the results. If they're still not good enough, see [future.md § Video](future.md#video).
+
+## Logs
+
+- **Robot:** `journalctl -u deck-gateway` (safety events at INFO), and `/diagnostics` → `deck_gateway: link` (`ros2 run rqt_robot_monitor rqt_robot_monitor`).
+- **Deck:** `steamdeck-remote-joy log --tail 50`.
+
+Both carry the session ID, so they can be lined up after an incident.
+
+## Commissioning checklist
+
+Do this with the drive wheels **off the ground** the first time, and after every upgrade.
+
+- [ ] `probe` shows the robot's name and actions. A Deck that isn't paired (or whose bundle has been revoked) can't connect.
+- [ ] The camera shows on the Deck, live.
+- [ ] After the gateway starts, the Deck shows STOPPED (`startup`). View+Menu (1 s) clears it only with sticks centered and LB released. Otherwise the Deck shows the reason it was refused.
+- [ ] Sticks without LB → no motion.
+- [ ] LB plus left stick forward → drives forward. Right stick right → turns right. If not, fix the signs in `teleop_twist_joy.yaml`.
+- [ ] Opening the panel (Menu) while driving → the robot stops (neutral input).
+- [ ] **Watchdog:** while driving, put the Deck in airplane mode → stops within about 0.25 s.
+- [ ] **Deck sleep:** press the power button while driving → stops. On wake, the app reconnects and the robot is STOPPED.
+- [ ] **App quit:** while driving, quit from Steam → stops.
+- [ ] **Gateway stop:** `pkill -f deck_gateway` while driving → the robot's base `cmd_vel` timeout stops it. *If it doesn't, fix the base before going any further.*
+- [ ] **Router stop:** kill the router while driving → stops (watchdog), and the Deck shows LINK LOST.
+- [ ] **Video loss:** kill `deck_video` → the Deck shows NO VIDEO, and driving still works.
+- [ ] B and the touchscreen STOP both latch on every screen, including with the panel open.
+- [ ] A second paired Deck shows BUSY while the first one is driving.
+- [ ] **Handover:** quit the app on the first Deck → the robot stops at once. The second Deck can take control immediately and starts STOPPED (`new_owner`).
+- [ ] **Short drop:** briefly block traffic (e.g. `sudo iptables -I INPUT -p udp --dport 7450 -j DROP` on the robot for about 0.5 s, then `-D`) → the robot stops, the Deck shows REARM, and driving resumes only after releasing and pressing LB.
+- [ ] **Long drop:** put the Deck in airplane mode for 3 s while driving → the robot stops, and after reconnecting the Deck shows STOPPED (`link_lost`).
+- [ ] **STOP is teleop-only:** confirm that's acceptable for this robot. If other `cmd_vel` sources must also halt, wire `/steamdeck/stop_latched` into them (e.g. a `twist_mux` lock), then test that.
+- [ ] **Action gating:** while STOPPED, a `moves_robot` action (e.g. Dock) is greyed out and refused. On a second Deck that isn't in control, all actions are refused.
+- [ ] **Base limits:** with teleop scales temporarily set high, the robot still doesn't exceed the base's speed limit.
+- [ ] Each configured action works, and ones marked `confirm` ask first.
+- [ ] Button hints match what each free button actually does. Those buttons do nothing while STOPPED, REARM or with the panel open, and the hint line is dimmed then.
+- [ ] No robot node is bound to a reserved button (B, View, Menu, LB, RB). Check the gateway's startup warnings.
+- [ ] The hardware E-stop works independently.
+
+## Upgrade
+
+```bash
+# Robot
+cd ~/ros2_ws/src/ros2_steamdeck_remote_joy && git fetch && git checkout vX.Y.Z
+cd ~/ros2_ws && colcon build --packages-up-to deck_gateway deck_video && sudo systemctl restart deck-gateway
+
+# Deck: build the tarball on the dev machine, then:
+tar xf ~/steamdeck-remote-joy-vX.Y.Z-x86_64.tar.gz -C ~ && ~/steamdeck-remote-joy/install.sh
+```
+
+The Steam entry, controller layout and pairing stay as they are, so there's nothing to re-add.
+
+**Roll back on the Deck:** `~/steamdeck-remote-joy/install.sh --rollback`. By hand: `ln -sfn versions/v0.1.0 ~/.local/share/steamdeck-remote-joy/current`.
+
+Run the checklist again after any upgrade.
+
+## Uninstall
+
+- **Deck:** `~/steamdeck-remote-joy/uninstall.sh` removes `versions/`, the links, and the `.desktop` file. Add `--purge` to also delete the pairing and config. Then remove the game from Steam.
+- **Robot:** `sudo systemctl disable --now deck-gateway`, then delete the unit file and the packages. Delete `~/.config/deck_gateway/tls/` to remove the CA and all pairings.
