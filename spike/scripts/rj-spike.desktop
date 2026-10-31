@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=RJ Spike
+Comment=M0 spike: gamepad, touch, link and video test
+Exec=/home/deck/rj-spike/run.sh
+Terminal=false
+Categories=Game;

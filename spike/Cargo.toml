@@ -1,0 +1,15 @@
+# M0 spike: throwaway code that answers open items O1, O2, O3 and O15
+# (see docs/architecture.md § M0 spike). Not the product code.
+[workspace]
+resolver = "2"
+members = ["common", "deck_spike", "robot_spike"]
+
+[workspace.dependencies]
+# Pinned to the version vendored in ROS 2 Jazzy (zenoh_cpp_vendor). "unstable"
+# exposes per-publisher reliability, which the spike compares against.
+zenoh = { version = "=1.10.1", features = ["unstable"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+strip = true

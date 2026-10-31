@@ -1,0 +1,13 @@
+[package]
+name = "deck_spike"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+spike_common = { path = "../common" }
+zenoh.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+eframe = "0.37"
+gilrs = "0.11"
+zune-jpeg = "0.4"
