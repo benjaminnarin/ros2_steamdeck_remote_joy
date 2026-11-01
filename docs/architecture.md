@@ -144,31 +144,12 @@ Everything runs over **any IP link**: Wi-Fi in the MVP, and Ethernet/USB tetheri
 | O2 | ✅ **Answered (M0):** eframe 0.37 runs fullscreen at 1280×800 under gamescope, touch works, and video plays smoothly at 30 fps. | Done |
 | O3 | ✅ **Answered (M0):** with default QUIC, a 1 s stall replayed every queued echo up to 1.64 s late (stale burst). `?rel=0` on a second link didn't help. **`?mixed_rel=1` on both the listener and the endpoint** fixes it: 1.0, 1.5 and 3 s stalls show **0 stale messages**, lost messages are simply dropped, and a 1.5 s stall recovers without reconnecting. A small residual backlog (≤ about 170 ms) comes from Zenoh's send queue. | Done |
 | O4 | DSCP and socket buffers. **Partly answered:** Zenoh documents `#dscp=` for TCP/UDP links and `so_sndbuf`/`so_rcvbuf` for TCP/TLS, but not for QUIC. Fallback for robot → Deck traffic: mark DSCP with an `nftables` rule on UDP port 7450. The Deck → robot direction is low-bandwidth, and marking it would need root on the Deck, so it's skipped. | Spike |
-| O5 | ✅ **Answered:** Jazzy's `zenoh_cpp_vendor` pins zenoh-c/zenoh-cpp to **1.10.1** (plus fixes), built with its default features (TCP, UDP, TLS, QUIC, QUIC datagrams, multilink). `rmw_zenohd` reads `ZENOH_ROUTER_CONFIG_URI`, so it works as our router with `router.json5`. The Deck pins the `zenoh` crate to `=1.10.1`. The spike confirms that crates.io 1.10.1 interoperates with the vendored build. | Done; recheck on Jazzy syncs |
-| O6 | ✅ **Answered:** access-control subjects support `cert_common_names` (plus `interfaces` and `link_protocols`). ZIDs aren't authenticated, so they're never used for access. `low_pass_filter` (per `key_exprs`, `size_limit`) provides our per-key payload limits. | Done |
+| O5 | ✅ **Answered, with a correction (2026-11-01):** the source of Jazzy's and Lyrical's `zenoh_cpp_vendor` pins zenoh-c/zenoh-cpp to **1.10.1** (plus fixes), but the *binary* must be new enough: Jazzy ≥ 0.2.12, Lyrical ≥ 0.10.7. Lyrical 0.10.6, the main apt repo's version until 0.10.7 syncs, contains Zenoh **1.8.0 without `mixed_rel`**. Until then, install 0.10.7 from `ros2-testing` ([deployment.md § Zenoh package version](deployment.md#zenoh-package-version)). The builds check the version. 1.10.1 is built with its default features (TCP, UDP, TLS, QUIC, QUIC datagrams, multilink). `rmw_zenohd` reads `ZENOH_ROUTER_CONFIG_URI`, so it works as our router with `router.json5`. The Deck pins the `zenoh` crate to `=1.10.1`. The spike confirms that crates.io 1.10.1 interoperates with the vendored build. | Done; recheck on Jazzy syncs |
+| O6 | **Answered on paper, verify in M1:** access-control subjects support `cert_common_names` (plus `interfaces` and `link_protocols`). ZIDs aren't authenticated, so they're never used for access. `low_pass_filter` (per `key_exprs`, `size_limit`) provides our per-key payload limits. | M1: a certificate whose CN isn't listed must fail to put `rj/v1/control`, and an oversized put must be dropped |
 | O7 | ✅ **Mostly answered** from source: `game_controller_node` publishes **6 axes / 21 buttons** in SDL order, with all axes inverted so stick up/left = **+1** (same as our wire format). Triggers come out as **0 released → −1.0 fully pressed**, so the gateway maps our 0..1 to 0..−1. `teleop_twist_joy` parameters: `require_enable_button`, `enable_button`, `enable_turbo_button`, `axis_linear.x`, `scale_linear(_turbo).x`, `axis_angular.yaw`, `publish_stamped_twist` (default `false`), `frame`. Confirm trigger sign on hardware in M1. | M1 (quick check) |
 | O14 | ✅ **Answered (no):** community reports say SteamOS doesn't resolve `.local` out of the box (mDNS is off in the read-only image). Robots use a **fixed IP**. If names are wanted later, the Deck app can resolve mDNS itself (`mdns-sd` crate) without touching SteamOS. | Done |
 | O15 | ✅ **Answered (M0):** with a 2 s lease and the faster retry, Zenoh reconnects about **0.8 s** after Wi-Fi returns. After airplane mode, the total is about 5.5 s, dominated by SteamOS rescanning (3.8 s) and associating (0.9 s). No false disconnects on normal Wi-Fi. | Done |
 | O16 | Natural Wi-Fi delay spikes of 300–500 ms with no loss, likely Wi-Fi power saving (on at both ends during M0). Handled by the late-control guard ([interface.md § Rules](interface.md#rules)). Re-measure with power saving off. | M1 |
 | O13 | Drive stack not chosen yet: ros2_control `diff_drive_controller` (`TwistStamped`) or a custom driver (`Twist`). The launch argument `cmd_vel_stamped` supports both, and either way the base must provide the stale-command timeout and speed limit. | Before M1 on the real robot |
-
-Post-MVP open items (O8–O12) are in [future.md](future.md#post-mvp-decisions-and-open-items).
-
-### M0 spike
-
-On the real Deck and Wi-Fi. **Status: passed** (2026-10-31; details and numbers in [spike/README.md](../spike/README.md)). Not yet done: video at the edge of range, and the `pair` → bundle flow, which needs the real gateway. Pass criteria:
-
-| Check | Pass if |
-|-------|---------|
-| gilrs + egui in Game Mode | Live input values shown, touch works, fullscreen stable |
-| Control Deck → router → minimal gateway | Median ≤ 20 ms one way. **No stale burst** after a 1–2 s Wi-Fi stall (e.g. walking out of range and back). |
-| Video: 480p JPEG at 30 fps through Zenoh | > 95% of frames arrive at normal range, latency close to the per-stage estimate |
-| Setup | `pair` → copy bundle → `robot add --bundle` works end to end |
-| Lease (O15) | With a 2 s lease, a 3 s Wi-Fi loss is detected and reconnected within ~3 s, and normal driving shows no false disconnects |
-| Reconnect | Brief Wi-Fi blip → REARM, then resumes after deadman re-press. Drop > 1 s → the app reconnects by itself and the robot is STOPPED (`link_lost`). |
-
-If control or video fail, those flows switch to the fallback transport ([future.md](future.md#fallback-transports)), and Zenoh stays for status, actions and info.
-
-## Latency budget
-
-Measured per stage by the Deck's debug overlay ([controller.md](controller.md#debug-overlay)). Rough targets: camera driver (often the largest share) + ~5 ms resize/encode + a few ms Wi-Fi + ~3 ms decode + ≤ 16 ms display. Check glass-to-glass as described in [deployment.md](deployment.md#video-tuning).
+| O17 | `rmw_zenohd` as our router. The M0 spike used its own Rust router, so `rmw_zenohd` with QUIC + mTLS + `mixed_rel=1`, a 2 s lease, `access_control` and `low_pass_filter` from `router.json5` is still untested. Fallback: a tiny router binary of our own on zenoh-c, or the gateway's session running in router mode. | Early M1: run `rmw_zenohd` with a draft `router.json5` and connect the spike's Deck app to it |
+| O18 | Building the Deck tarball. `deployment.md` plans an Ubuntu 22.04 container, but Docker isn't usable without root on the dev machine. The Deck's glibc (2.43) currently equals the dev machine's, so a local build runs there, but that breaks as soon as the dev machine's glibc is newer than the Deck's. Options: rootless Podman, building on an older-glibc toolchain (e.g. `cargo zigbuild` targeting an older glibc), or building in CI. | Before M5 |

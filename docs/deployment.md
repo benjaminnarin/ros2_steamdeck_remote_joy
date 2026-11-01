@@ -34,6 +34,27 @@ source install/setup.bash
 
 `controller/` has a `COLCON_IGNORE` file, so colcon skips it. The robot's own ROS middleware doesn't matter: Fast DDS, Cyclone or `rmw_zenoh` all work, because the gateway uses `rclcpp` for ROS and a separate Zenoh session for the Deck.
 
+### Zenoh package version
+
+`deck_gateway` and the router need `zenoh_cpp_vendor` / `rmw_zenoh_cpp` built from **Zenoh 1.10.1** (`interface/ZENOH_VERSION`): **Jazzy ≥ 0.2.12, Lyrical ≥ 0.10.7**. Older binaries lack `mixed_rel=1`, and Zenoh ignores the unknown option silently, so control and video would replay stale data after Wi-Fi stalls. Check with:
+
+```bash
+grep 'define ZENOH_C "' /opt/ros/$ROS_DISTRO/opt/zenoh_cpp_vendor/include/zenoh_configure.h   # must say 1.10.1
+scripts/setup_dev.sh --check                                                                   # also checks it
+```
+
+**Lyrical, until 0.10.7 reaches the main repo:** install just these two packages from `ros2-testing`. An apt pin can't do this, because `ros2` and `ros2-testing` publish identical release metadata (same origin, label and suite), so apt can't tell them apart. Their dependencies are all in the main repo.
+
+```bash
+cd "$(mktemp -d)"
+base=http://packages.ros.org/ros2-testing/ubuntu/pool/main/r
+wget $base/ros-lyrical-zenoh-cpp-vendor/ros-lyrical-zenoh-cpp-vendor_0.10.7-1resolute.20261024.164443_amd64.deb \
+     $base/ros-lyrical-rmw-zenoh-cpp/ros-lyrical-rmw-zenoh-cpp_0.10.7-1resolute.20261024.194644_amd64.deb
+sudo apt install ./ros-lyrical-zenoh-cpp-vendor_*.deb ./ros-lyrical-rmw-zenoh-cpp_*.deb
+```
+
+When the main repo catches up, normal upgrades take over: it's the same version, and apt never downgrades on its own. If the files have been replaced by a newer testing build, take the current file names from `http://packages.ros.org/ros2-testing/ubuntu/dists/resolute/main/binary-amd64/Packages.gz`.
+
 ### Pair each Deck
 
 ```bash

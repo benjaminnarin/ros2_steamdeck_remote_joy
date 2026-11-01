@@ -9,7 +9,7 @@ messages are tiny fixed structs instead of Protobuf, and there's no ROS.
 | `robot_spike` | This machine (the robot's computer for initial testing) | Zenoh router on `quic/0.0.0.0:7450` with mTLS. Echoes every control message, streams synthetic JPEG (480×270, 30 fps, ~17 KB/frame) |
 | `deck_spike` | Steam Deck | egui app: live gilrs gamepad view (O1), fullscreen + touch test (O2), 50 Hz control with RTT, stall and stale-burst detection (O3, O15), video with fps, delivery and latency. `--headless` prints the same stats once per second. |
 
-Both use Zenoh **1.10.1**, the version vendored by ROS 2 Jazzy and Lyrical.
+Both use Zenoh **1.10.1**, the version ROS 2 Jazzy and Lyrical vendor from `zenoh_cpp_vendor` 0.2.12 / 0.10.7 on (see [deployment.md § Zenoh package version](../docs/deployment.md#zenoh-package-version)).
 
 ## Build and deploy (from this machine)
 
@@ -86,7 +86,7 @@ Setup: the robot computer (this machine) and the Deck both on 5 GHz Wi-Fi (chann
 | **O15** reconnect | ✅ With a 2 s lease and retry 200 ms → 1 s, Zenoh is back about **0.8 s** after Wi-Fi returns. Airplane mode for 5 s: about 5.5 s from radio-on to CONNECTED, of which 3.8 s is SteamOS scanning and 0.9 s is association/DHCP. |
 | Natural Wi-Fi spikes | ⚠️ A few 300–500 ms delay spikes with **no loss**: the radio holds packets, likely power saving. The design adds a late-control guard in the gateway; re-measure with power saving off. |
 | `steamos-add-to-steam` | ✅ Works over SSH with a `.desktop` file. A bare `.sh` is rejected ("Unsupported file type"). |
-| ROS on the robot computer | This machine runs **ROS 2 Lyrical** (Ubuntu 26.04). Lyrical's `zenoh_cpp_vendor` pins the **same Zenoh 1.10.1** and builds zenoh-c with the unstable API. |
+| ROS on the robot computer | This machine runs **ROS 2 Lyrical** (Ubuntu 26.04). Lyrical's `zenoh_cpp_vendor` source pins the **same Zenoh 1.10.1** with the unstable API. *Correction (2026-11-01):* only from release 0.10.7 on; the 0.10.6 binary in the main apt repo is Zenoh 1.8.0 without `mixed_rel`. |
 | Not done | Video at the edge of range. `pair` → bundle flow (needs the real gateway). |
 
 Endpoint used for the passing runs: robot `--listen 'quic/0.0.0.0:7450?mixed_rel=1'`, and on the Deck `~/rj-spike/args` = `--connect quic/192.168.1.131:7450?mixed_rel=1`.

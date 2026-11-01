@@ -1,10 +1,10 @@
 # Robot side
 
-ROS 2 Jazzy (Ubuntu 24.04) or Lyrical (Ubuntu 26.04, the initial test robot), x86. Both vendor Zenoh 1.10.1. Three processes, started by one launch file:
+ROS 2 Jazzy (Ubuntu 24.04) or Lyrical (Ubuntu 26.04, the initial test robot), x86. Needs `zenoh_cpp_vendor` **≥ 0.2.12 on Jazzy or ≥ 0.10.7 on Lyrical**, the first releases built from Zenoh 1.10.1 ([deployment.md § Zenoh package version](deployment.md#zenoh-package-version)). Three processes, started by one launch file:
 
 | Process | Package | Language |
 |---------|---------|----------|
-| Zenoh router | config in `deck_gateway` | (Zenoh binary, open item O5) |
+| Zenoh router | config in `deck_gateway` | `rmw_zenohd` (open item O17) |
 | `deck_gateway` | `deck_gateway` | C++ (rclcpp + zenoh-cpp) |
 | `deck_video` | `deck_video` | C++ composable node |
 
@@ -60,7 +60,7 @@ robot/deck_sim/                  # ament_python: development and CI without a re
 - Access control as in [interface.md § Security](interface.md#security). Payload size limits per key.
 - Multicast scouting off. It's a separate key space from any `rmw_zenoh` router the robot may run for ROS itself (that one uses 7447 by default).
 - Started by the launch file and respawned if it exits.
-- Binary: **`rmw_zenohd`** (from `ros-jazzy-rmw-zenoh-cpp`, Zenoh 1.10.1) started with `ZENOH_ROUTER_CONFIG_URI=<share>/config/router.json5`. It's a separate process and port from any `rmw_zenohd` the robot runs for ROS itself.
+- Binary: **`rmw_zenohd`** (from `ros-<distro>-rmw-zenoh-cpp`, same minimum versions as `zenoh_cpp_vendor`) started with `ZENOH_ROUTER_CONFIG_URI=<share>/config/router.json5`. It's a separate process and port from any `rmw_zenohd` the robot runs for ROS itself.
 - `router.json5`: 2 s lease, `access_control` by `cert_common_names`, `low_pass_filter` size limits per key, and on the robot an optional `nftables` rule that marks outgoing UDP 7450 with DSCP (open item O4).
 
 ## `deck_gateway`

@@ -83,7 +83,7 @@ A running record of how the project was designed, built and tested, kept for a w
 ### 1.6 Research before building
 
 Answered from upstream source and config:
-- **Zenoh version:** Jazzy (and later Lyrical) vendor **Zenoh 1.10.1**, built with QUIC, TLS, QUIC datagrams and multilink.
+- **Zenoh version:** Jazzy (and later Lyrical) vendor **Zenoh 1.10.1**, built with QUIC, TLS, QUIC datagrams and multilink. *(True of the source; the Lyrical binary on apt was older. See 3.3.)*
 - **Router:** `rmw_zenohd` accepts our config through `ZENOH_ROUTER_CONFIG_URI`.
 - **Access control:** supports `cert_common_names`.
 - **Joystick conventions:** `joy` uses 6 axes / 21 buttons with up/left = +1, and triggers go 0 → −1. `teleop_twist_joy` parameter names confirmed.
@@ -106,7 +106,7 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
 
 - **Build happens on the dev machine, the binary runs on the Deck.** The Deck has no compiler. Both have glibc 2.43, so binaries copy over directly.
 - **Rust toolchain** installed with rustup in `~/.cargo`. Docker wasn't usable without root.
-- **Discovered:** the dev machine, which is the robot computer for initial testing, runs **ROS 2 Lyrical** on Ubuntu 26.04, not Jazzy. Lyrical's `zenoh_cpp_vendor` pins the same Zenoh 1.10.1, so the plan holds.
+- **Discovered:** the dev machine, which is the robot computer for initial testing, runs **ROS 2 Lyrical** on Ubuntu 26.04, not Jazzy. Lyrical's `zenoh_cpp_vendor` pins the same Zenoh 1.10.1, so the plan holds. *(Corrected in 3.3: only from release 0.10.7 on.)*
 - **Code** (`spike/`, throwaway):
   - `robot_spike`: Zenoh router with mTLS, echoes every control message, streams synthetic JPEG;
   - `deck_spike`: egui app with a gamepad view, touch test, link and video stats, stale-burst detection, and a headless mode.
@@ -209,6 +209,25 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
   - Rust is pinned to 1.99.1 in `controller/rust-toolchain.toml`.
   - The script holds no package list of its own. **Rule: every new dependency goes into a `package.xml` or `Cargo.toml`.**
 - **First `--check` run** found `libprotoc-dev` still missing (rosdep's `protobuf-dev` key includes it) and the pinned Rust not yet installed. The pinned toolchain then passed the Rust tests and clippy.
+
+### 3.3 Checking open questions before the gateway: a wrong Zenoh version
+
+- **How it was found:** before writing the gateway I checked that zenoh-cpp was available. It wasn't installed, so I downloaded and unpacked the `.deb` files without installing them, and read `zenoh_configure.h` and the library's strings.
+- **Finding:** Lyrical's apt `zenoh_cpp_vendor` **0.10.6** is zenoh-c **1.8.0** / zenoh-cpp 1.9.0 (Zenoh commit 2687c51, tag v1.8.0). Zenoh 1.8.0's QUIC link has **no `mixed_rel`**: it isn't in the source at that tag or in the binary. Zenoh ignores unknown endpoint options, so the gateway would have built and run, and the M0 stale burst would quietly have come back.
+- **Why the design said 1.10.1:** the research read the `zenoh_cpp_vendor` CMakeLists on the source branches, which do pin 1.10.1, and rosdistro already lists **0.10.7** for Lyrical (0.2.12 for Jazzy). But 0.10.7 was only in `ros2-testing` (built 2026-10-24) and hadn't synced to the main repo yet. Unpacking the testing `.deb` confirmed zenoh-c 1.10.1, Zenoh commit 9fcd9cb (matching upstream), and `mixed_rel` present.
+- **Workaround:**
+  - Install just the two 0.10.7 `.deb` files from `ros2-testing`.
+  - An apt pin was the first idea, but it can't work: the two repos publish identical `Release` metadata (origin, label, suite), so apt can't tell them apart.
+  - All of 0.10.7's dependencies were already installed from the main repo.
+- **Guard rails added:**
+  - `setup_dev.sh --check` compares the installed zenoh-c with `interface/ZENOH_VERSION`.
+  - `deck_gateway`'s CMake will fail on a mismatch.
+  - The docs now state the minimum package versions instead of "Lyrical vendors 1.10.1".
+- **Lesson:** check the binary you'll actually install, not the source branch. Version claims from source can run ahead of what apt ships.
+- **Other open items recorded in this pass:**
+  - O6 (access control) was only answered from docs, so it's now "verify in M1".
+  - New O17: `rmw_zenohd` has never been used as our router.
+  - New O18: the Deck tarball can't be built in Docker without root, and relying on equal glibc versions is fragile.
 
 ---
 

@@ -89,6 +89,22 @@ if command -v rosdep >/dev/null; then
   fi
 fi
 
+# ── Zenoh version (the vendored zenoh-c must match interface/ZENOH_VERSION) ──
+step "Zenoh (zenoh_cpp_vendor)"
+want=$(head -1 "$repo/interface/ZENOH_VERSION")
+hdr=/opt/ros/$distro/opt/zenoh_cpp_vendor/include/zenoh_configure.h
+if [[ -f $hdr ]]; then
+  have=$(sed -n 's/^#define ZENOH_C "\(.*\)"/\1/p' "$hdr")
+  if [[ $have == "$want" ]]; then
+    ok "zenoh-c $have"
+  else
+    # Not installable by rosdep alone: see docs/deployment.md § Zenoh package version.
+    need "zenoh-c $want (installed: $have; Lyrical needs zenoh_cpp_vendor >= 0.10.7, see docs/deployment.md § Zenoh package version)"
+  fi
+else
+  echo "  (not installed yet: rosdep installs it once a package depends on zenoh_cpp_vendor; it must be zenoh-c $want)"
+fi
+
 # ── Rust (Deck app) ─────────────────────────────────────────
 step "Rust (controller/)"
 export PATH="$HOME/.cargo/bin:$PATH"
