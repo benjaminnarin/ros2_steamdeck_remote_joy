@@ -154,7 +154,7 @@ Free buttons reach the robot only through `/joy`, so they inherit its gating aut
 
 ## Rules
 
-**Control ownership (gateway):** the first session to send `Control` becomes the owner. Messages from other sessions are ignored, and `RobotState` reports `BUSY` with `owner_session` set. Ownership is released after 2 s without control from the owner, or **immediately** when the owner's liveliness token disappears (a deliberate disconnect). Within a session, messages with `seq <= last_seq` are ignored.
+**Control ownership (gateway):** the first session to send `Control` becomes the owner. Messages from other sessions are ignored. `RobotState` is broadcast on one key and always describes the **owner's** state, so the gateway never publishes `BUSY`. Doing so would also tell the owner it's busy. Instead a Deck shows **BUSY** itself when `owner_session` is neither 0 nor its own session. The `BUSY` enum value stays reserved. Ownership is released after 2 s without control from the owner, or **immediately** when the owner's liveliness token disappears (a deliberate disconnect). Within a session, messages with `seq <= last_seq` are ignored.
 
 **Disconnect (Deck):** on quit, send `Stop` (reliable), withdraw the liveliness token, then close the session.
 
@@ -163,7 +163,7 @@ Free buttons reach the robot only through `/joy`, so they inherit its gating aut
 **Late-control guard (gateway):** Wi-Fi itself sometimes delivers packets 300–500 ms late without losing them (seen in the M0 spike). The gateway discards such controls without needing synchronized clocks:
 - For each `Control`, compute `d = robot_arrival_us − deck_time_us`. The two clocks are unrelated, so only changes in `d` matter.
 - Keep `d_min`, the lowest `d` seen in the last 10 s.
-- If `d − d_min > max_control_delay_ms` (default 150), the message is **late**: it isn't applied, and it doesn't feed the watchdog.
+- If `d − d_min > max_control_delay_ms` (default 150), the message is **late**: it isn't applied, and it doesn't feed the watchdog. It still counts as in-sequence: it's echoed in `RobotState` and keeps ownership alive.
 
 A stretch of late controls therefore looks like a short drop, and is handled through REARM.
 
@@ -179,7 +179,7 @@ A stretch of late controls therefore looks like a short drop, and is handled thr
   - the gateway's `set_stop` service;
   - gateway startup (`startup`);
   - **any ownership change** (`new_owner`), including the same Deck reconnecting with a new session.
-- **Cleared only by** `clear_stop` from the owner, and only when that session's latest `Control` has sticks within 0.1 and LB/RB released.
+- **Cleared only by** `clear_stop` from the owner, and only when that session's latest applied `Control` is live (not `NO_CONTROL`), has sticks within 0.1, has LB/RB released, and doesn't still have `stop = true` with `seq >= released_seq`. Refusals: `not_owner`, `no_control`, `sticks_not_centered`, `deadman_held`, `stop_still_set`.
 - **Clearing without a race:**
   1. The Deck first stops setting `Control.stop`.
   2. It then sends `clear_stop` with `released_seq` = the first seq it sent with `stop = false`.
@@ -193,7 +193,7 @@ A stretch of late controls therefore looks like a short drop, and is handled thr
 - Uses one `session_id` for the whole app run, and re-declares its liveliness token after reconnecting.
 - Sends `Control` immediately on any button change, plus every 20 ms.
 - On a STOP press, sends `Stop` (reliable) *and* sets `Control.stop`.
-- Ignores `RobotState` fields that refer to another owner.
+- Ignores `RobotState` fields that refer to another owner, and shows BUSY when `owner_session` is another session's.
 
 **Limits:**
 - The Deck drops a `VideoFrame` whose `data` is over 512 KB, and keeps at most one frame queued for decode.

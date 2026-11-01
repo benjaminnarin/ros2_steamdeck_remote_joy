@@ -277,6 +277,22 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
   - A Deck test started over SSH died when the session closed, even with `nohup`/`setsid`. The first stall run measured nothing until it was rerun under `systemd-run --user`.
 - **Lesson:** a test that passes on loopback can still fail under real link conditions. Buffer-full paths only show up on a real, slower link.
 
+### 3.5 `deck_gateway` step 1: the safety core
+
+- **What:** `deck_gateway_core`, a static C++17 library with no ROS, Zenoh or Protobuf. Every call takes `now_us`, so tests control time.
+  - `SafetyCore`: ownership, the 250 ms watchdog, the owner timeout, REARM vs `link_lost` around `resume_grace_ms`, the stop latch with the `released_seq` rule, `clear_stop`, and action gating.
+  - `LateControlGuard`: a sliding-window minimum of `arrival − deck_time` over 10 s, kept in a monotonic deque.
+  - `to_joy`: the `joy` layout, with trigger mapping, clamping, and NaN or inf mapped to 0.
+  - The node will only translate between Protobuf/ROS and these types.
+- **Spec gaps found while writing it,** now fixed in `interface.md`:
+  - **BUSY can't be broadcast:** `RobotState` goes to every Deck, so a `BUSY` state would also reach the owner. The Deck now derives BUSY from `owner_session`.
+  - "Deadman" means LB *or* RB, because `teleop_twist_joy` also drives with RB alone.
+  - Late controls stay in sequence: they're echoed and keep ownership, but don't feed the watchdog.
+  - `clear_stop` is also refused with no live control, or while the Deck still sends `stop = true` at `seq >= released_seq`.
+  - When the latch is already set, the first reason is kept.
+- **Tests:** 25 gtests with a fake clock, covering every rule, including the clear-stop race (the query overtakes in-flight `stop = true` controls), and a new owner not inheriting the previous owner's `released_seq`. They passed on the first run.
+- **Mutation check:** I broke six rules one at a time: no `released_seq` guard, short drops latching, the late guard off, REARM resuming with the deadman still held, a new owner not latched, `clear_stop` ignoring the deadman. Every one made at least one test fail. They're cheap to rerun after changes.
+
 ---
 
 ## How to keep this log
