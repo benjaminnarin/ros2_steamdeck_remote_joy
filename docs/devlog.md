@@ -142,7 +142,29 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
 - **Deployment:** `steamos-add-to-steam` must be given the `.desktop` file.
 - **Robot side:** Jazzy and Lyrical are both supported.
 
-### 2.4 Still open after M0
+### 2.4 First end-to-end demo
+
+- **Goal:** prove the whole chain before writing the real gateway: Deck → Zenoh → ROS → something moving, with video back.
+- **Chain:** RJ Spike on the Deck → Zenoh (QUIC, mTLS, `mixed_rel=1`) → `spike/demo/demo_bridge.py` → `/joy` → `teleop_twist_joy` (LB deadman, RB turbo) → `/turtle1/cmd_vel` → **turtlesim** on the robot computer. Webcam → JPEG → Deck screen.
+- **The bridge** (Python, rclpy + zenoh-python 1.10.1, about 150 lines) stands in for `deck_gateway` and `deck_video`. It:
+  - converts gilrs axes to `joy` conventions (X negated, triggers 0 → −1);
+  - runs a 250 ms watchdog that sends neutral `Joy`;
+  - echoes each control back so the Deck can measure RTT.
+
+  It speaks the spike messages, not Protobuf.
+- **Setup snags:**
+  - The system Python has no pip, so `pip` was bootstrapped into a project venv (`--system-site-packages`, so `rclpy` and `cv2` stay visible).
+  - ROS setup must be sourced from bash, not zsh.
+  - The webcam needed MJPEG to get past 15 fps in raw mode.
+- **Bonus:** the Deck app, still running from earlier tests, reconnected to the new bridge by itself when it replaced `robot_spike` on the same port.
+- **Results:**
+  - Operator drove the turtle with the Deck: it went from (5.54, 5.54, 0 rad) to (4.80, 5.53, 0.65 rad), and stopped with 0 velocity on deadman release.
+  - Control steady at 50/s, watchdog never tripped.
+  - RTT 2.5 / 4.4 / 7.0 ms (min/avg/p95).
+  - Webcam 15 fps (likely auto-exposure in low light), about 11 KB/frame, 96% delivered, about 13 ms capture → received.
+- **Bug found after the demo:** when the operator quit the Deck app, the bridge's watchdog fired and crashed on `logger.warn()`, which Lyrical's rclpy no longer has (it's `warning()`). `demo.sh` then stopped everything, so it failed safe and the turtle stopped. Fixed. Lesson for M1: the real gateway's link-loss paths need automated tests (the planned `launch_testing` suites), not just manual runs.
+
+### 2.5 Still open after M0
 
 - Video at the edge of Wi-Fi range.
 - The `pair` → bundle flow (needs the real gateway).

@@ -45,6 +45,22 @@ Useful variants:
 - `--no-tls` with `--connect udp/...` (the robot side then needs `--no-tls --listen udp/0.0.0.0:7450`): plain baseline.
 - `--lease-ms 10000`: Zenoh's default lease, to compare reconnect times (O15).
 
+## End-to-end demo (turtlesim)
+
+Deck → Zenoh → `demo/demo_bridge.py` → `/joy` → `teleop_twist_joy` → turtlesim, plus webcam video back to the Deck. The bridge is a Python stand-in for `deck_gateway` and `deck_video` (watchdog, `joy` axis conventions, echo for RTT). It replaces `robot_spike` on port 7450, so stop that first.
+
+```bash
+# once: venv that can also see ROS's rclpy and the system's cv2 (this Python has no pip, so bootstrap it)
+python3 -m venv --system-site-packages --without-pip .venv
+curl -sSf https://bootstrap.pypa.io/get-pip.py | .venv/bin/python
+.venv/bin/python -m pip install eclipse-zenoh==1.10.1
+
+demo/demo.sh                # starts turtlesim, teleop_twist_joy and the bridge; Ctrl+C stops all
+demo/demo.sh --camera -1    # no webcam
+```
+
+On the Deck, launch RJ Spike, **hold LB** and use the left stick (forward/back) and right stick (turn). RB is turbo. Releasing LB stops the turtle.
+
 ## Checks
 
 | # | Check | How | Pass if |
