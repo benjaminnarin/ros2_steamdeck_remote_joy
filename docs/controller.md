@@ -35,7 +35,8 @@ controller/
 │   ├── src/profiles.rs        # pair bundle import (checks id = SHA-256 of ca.pem), list, forget, active
 │   ├── src/events.rs          # JSON-lines event log, rotated
 │   └── tests/                 # pins.rs (zenoh pin, quinn-proto >= 0.11.18), profiles.rs
-│   (later: video.rs M2, status.rs M3, actions in queries M4; locator/links/pairing traits post-MVP)
+│   ├── src/video.rs           # rj/v1/video → newest-only slot → zune-jpeg decode thread → latest RGB + stats ✅
+│   (later: status.rs M3, actions in queries M4; locator/links/pairing traits post-MVP)
 ├── deck_app/                  # egui Drive screen + CLI (binary: steamdeck-remote-joy)  ✅ (M1)
 │   ├── src/main.rs            # CLI: run, robot add/list/forget, probe, log
 │   ├── src/ui.rs              # Drive screen: top bar, banners, deadman/turbo, hints, clear progress, touch STOP, panel

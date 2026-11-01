@@ -170,9 +170,11 @@ A composable node, `deck_video::VideoPublisher`.
 Behavior:
 - **On demand:** a Zenoh matching listener on `rj/v1/video` (`Publisher::declare_matching_listener`, part of zenoh-cpp's stable API on the zenoh-c backend). With no Deck subscribed, it unsubscribes from the camera and costs nothing.
 - **No stale frames:** sensor-data QoS (best effort, **depth 1**). A timer at `fps` takes the latest image, resizes it, and JPEG-encodes it (OpenCV with libjpeg-turbo). If encoding falls behind, frames are skipped.
-- **Zero-copy option:** load it into the camera driver's component container to get images in-process. A camera-driver crash then also stops video, which is fine because video isn't on the safety path. Default: its own container process.
+- **Put it in the camera driver's container** (`video_container:=<name>`) on a real robot: images then arrive in-process, with no copy and no loss. Between processes, Fast DDS (best effort, default settings) **lost 17% of 640×480 bgr8 frames** (900 KB) at 30 fps, while 480×360 (506 KB) and smaller arrived intact (devlog § 3.11). A camera-driver crash then also stops video, which is fine because video isn't on the safety path. Without `video_container` it runs in its own container (`deck_video_container`, respawned).
+- **Frames over 512 KB** are dropped with a warning (the router would drop them anyway). Every 5 s it logs images in, frames out, fps and average size.
 - **Timestamps:** capture time converted from the image's ROS `header.stamp` to the monotonic clock (`steady_now − (ros_now − stamp)`), plus capture → encode time, written into `VideoFrame`.
-- About 15–25 KB per frame, roughly 5 Mbps at the defaults.
+- About 15–25 KB per frame, roughly 5 Mbps at the defaults (measured: 18–20 KB at 480×360, quality 70).
+- **No rate adaptation yet:** it sends at `fps` regardless of the link (open item O19).
 
 ### Camera driver settings
 

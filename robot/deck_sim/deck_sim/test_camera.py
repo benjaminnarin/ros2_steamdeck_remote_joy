@@ -15,8 +15,8 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 
 
-def draw_pattern(width, height, frame_id, t):
-    """BGR test frame for time t (seconds). Pure function, used by the unit test too."""
+def static_background(width, height):
+    """The parts that never change: colour bars and grid."""
     img = np.zeros((height, width, 3), np.uint8)
     # Static colour bars (bottom third) so JPEG artefacts and colour order are easy to judge.
     bars = [(255, 255, 255), (0, 255, 255), (255, 255, 0), (0, 255, 0),
@@ -29,13 +29,20 @@ def draw_pattern(width, height, frame_id, t):
         img[: 2 * height // 3, x] = (60, 60, 60)
     for y in range(0, 2 * height // 3, 40):
         img[y, :] = (60, 60, 60)
+    cx, cy, r = width - 70, 70, 50
+    cv2.circle(img, (cx, cy), r, (200, 200, 200), 2)
+    return img
+
+
+def draw_pattern(width, height, frame_id, t, background=None):
+    """BGR test frame for time t (seconds). Pure function, used by the unit test too."""
+    img = (static_background(width, height) if background is None else background).copy()
     # Sweeping bar: one pass per second.
     phase = t % 1.0
     x = int(phase * (width - 20))
     img[: 2 * height // 3, x:x + 20] = (0, 200, 255)
     # Rotating clock hand: one turn per 10 s.
     cx, cy, r = width - 70, 70, 50
-    cv2.circle(img, (cx, cy), r, (200, 200, 200), 2)
     a = 2 * math.pi * (t % 10.0) / 10.0
     cv2.line(img, (cx, cy), (int(cx + r * math.sin(a)), int(cy - r * math.cos(a))), (0, 0, 255), 3)
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -53,13 +60,14 @@ class TestCamera(Node):
         self.frame_id = self.declare_parameter('frame_id', 'camera').value
         self.pub = self.create_publisher(Image, 'camera/image_raw', qos_profile_sensor_data)
         self.count = 0
+        self.background = static_background(self.width, self.height)
         self.create_timer(1.0 / fps, self.tick)
         self.get_logger().info(f'test pattern {self.width}x{self.height} @ {fps} fps')
 
     def tick(self):
         now = self.get_clock().now()
         self.count += 1
-        img = draw_pattern(self.width, self.height, self.count, now.nanoseconds / 1e9)
+        img = draw_pattern(self.width, self.height, self.count, now.nanoseconds / 1e9, self.background)
         msg = Image()
         msg.header.stamp = now.to_msg()
         msg.header.frame_id = self.frame_id

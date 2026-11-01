@@ -20,7 +20,8 @@ from ament_index_python.packages import PackageNotFoundError, get_package_share_
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import ComposableNodeContainer, LoadComposableNodes, Node
+from launch_ros.descriptions import ComposableNode
 
 TLS_FILES = ('ca.pem', 'robot.pem', 'robot.key')
 
@@ -85,7 +86,11 @@ def _router(context):
 
 
 def _gateway(context):
-    overrides = {'robot_id': _robot_id(_tls_dir(context))}
+    overrides = {'robot_id': _robot_id(_tls_dir(context)),
+                 # Info.camera (the actual frame size is in each VideoFrame)
+                 'camera_available': _bool(context, 'use_video') and _share('deck_video') is not None,
+                 'camera_max_width': int(LaunchConfiguration('video_max_width').perform(context)),
+                 'camera_max_fps': int(float(LaunchConfiguration('video_fps').perform(context)))}
     try:
         with open(os.path.join(_config_dir(context), 'pairing.json')) as f:
             name = json.load(f).get('robot_name')
@@ -113,8 +118,24 @@ def _video(context):
     if not _bool(context, 'use_video'):
         return []
     if _share('deck_video') is None:
-        return [LogInfo(msg='deck_gateway: deck_video is not built yet (M2); no video')]
-    return [LogInfo(msg='deck_gateway: TODO start deck_video (M2)')]
+        return [LogInfo(msg='deck_gateway: deck_video is not built; no video')]
+    component = ComposableNode(
+        package='deck_video', plugin='deck_video::VideoPublisher', name='deck_video',
+        parameters=[{
+            'image_topic': LaunchConfiguration('image_topic').perform(context),
+            'max_width': int(LaunchConfiguration('video_max_width').perform(context)),
+            'fps': float(LaunchConfiguration('video_fps').perform(context)),
+            'jpeg_quality': int(LaunchConfiguration('video_quality').perform(context)),
+        }])
+    container = LaunchConfiguration('video_container').perform(context)
+    if container:
+        # Into the camera driver's container: images arrive in-process (zero copy). A camera
+        # crash then also stops video, which is fine: video isn't on the safety path.
+        return [LoadComposableNodes(target_container=container, composable_node_descriptions=[component])]
+    return [ComposableNodeContainer(
+        name='deck_video_container', namespace='', package='rclcpp_components',
+        executable='component_container', output='screen', respawn=True, respawn_delay=1.0,
+        composable_node_descriptions=[component])]
 
 
 def generate_launch_description():
@@ -134,7 +155,11 @@ def generate_launch_description():
         DeclareLaunchArgument('use_teleop', default_value='true'),
         DeclareLaunchArgument('use_video', default_value='true'),
         DeclareLaunchArgument('image_topic', default_value='/camera/image_raw'),
-        DeclareLaunchArgument('video_container', default_value=''),
+        DeclareLaunchArgument('video_container', default_value='',
+                              description='load deck_video into this container (e.g. the camera driver\'s)'),
+        DeclareLaunchArgument('video_max_width', default_value='480'),
+        DeclareLaunchArgument('video_fps', default_value='30'),
+        DeclareLaunchArgument('video_quality', default_value='70'),
         DeclareLaunchArgument('cmd_vel_topic', default_value='cmd_vel'),
         DeclareLaunchArgument('cmd_vel_stamped', default_value='true',
                               description='TwistStamped (diff_drive_controller) or Twist'),

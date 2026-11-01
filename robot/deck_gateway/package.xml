@@ -18,6 +18,7 @@
   <depend>zenoh_cpp_vendor</depend>  <!-- >= 0.2.12 (Jazzy) / 0.10.7 (Lyrical): checked in CMake -->
 
   <exec_depend>deck_router</exec_depend>
+  <exec_depend>deck_video</exec_depend>
   <exec_depend>teleop_twist_joy</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

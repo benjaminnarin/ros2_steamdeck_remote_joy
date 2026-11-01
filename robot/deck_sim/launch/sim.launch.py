@@ -73,6 +73,10 @@ def generate_launch_description():
         DeclareLaunchArgument('camera', default_value='true',
                               description='Start the test-pattern camera (and video, with the gateway)'),
         DeclareLaunchArgument('camera_fps', default_value='30.0'),
+        # 480x360 bgr8 (506 KB) crosses processes intact; 640x480 (900 KB) lost ~17% of frames
+        # between processes with Fast DDS defaults (devlog 3.11).
+        DeclareLaunchArgument('camera_width', default_value='480'),
+        DeclareLaunchArgument('camera_height', default_value='360'),
         DeclareLaunchArgument('gateway', default_value='auto',
                               description='auto: include deck_gateway robot.launch.py if built'),
         DeclareLaunchArgument('config_dir', default_value='~/.config/deck_gateway',
@@ -86,7 +90,9 @@ def generate_launch_description():
              parameters=[{'cmd_vel_topic': CMD_VEL, 'cmd_vel_stamped': False,
                           'dock_teleports_turtle': LaunchConfiguration('turtlesim')}]),
         Node(package='deck_sim', executable='test_camera', name='test_camera',
-             parameters=[{'fps': LaunchConfiguration('camera_fps')}],
+             parameters=[{'fps': LaunchConfiguration('camera_fps'),
+                          'width': LaunchConfiguration('camera_width'),
+                          'height': LaunchConfiguration('camera_height')}],
              condition=IfCondition(LaunchConfiguration('camera'))),
         OpaqueFunction(function=_robot_side),
     ])

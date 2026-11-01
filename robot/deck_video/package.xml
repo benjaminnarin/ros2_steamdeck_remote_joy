@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>deck_video</name>
+  <version>0.1.0</version>
+  <description>Steam Deck remote joy, robot side: camera images to JPEG on rj/v1/video, only while a Deck watches. Composable node deck_video::VideoPublisher.</description>
+  <maintainer email="bnninit@gmail.com">Benjamin Narin</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>libopencv-dev</depend>
+  <depend>remote_joy_interface</depend>
+  <depend>zenoh_cpp_vendor</depend>  <!-- >= 0.2.12 (Jazzy) / 0.10.7 (Lyrical): checked in CMake -->
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

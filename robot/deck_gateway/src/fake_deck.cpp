@@ -12,6 +12,7 @@
 //   clear [ly=0] [lt=0]                     hold that stick/trigger 0.3 s, then clear_stop
 //   gap   [before=1] [silence_ms=500] [after=1]  drive, go silent, then drive again (REARM/link_lost)
 //   watch [seconds=2]                       print RobotState changes only
+//   video [seconds=3]                       subscribe to rj/v1/video, print fps/size/loss
 // Default endpoint: the router's local TCP endpoint (no TLS), tcp/127.0.0.1:7451.
 
 #include <atomic>
@@ -28,6 +29,7 @@
 
 #include "remote_joy/v1/control.pb.h"
 #include "remote_joy/v1/info.pb.h"
+#include "remote_joy/v1/video.pb.h"
 #include "remote_joy_interface/keys.hpp"
 
 namespace v1 = remote_joy::v1;
@@ -191,6 +193,42 @@ public:
     std::printf("STOP sent\n");
   }
 
+  /// Subscribes to rj/v1/video for `seconds` and prints what arrived.
+  void video(double seconds) {
+    struct Acc {
+      std::mutex m;
+      std::uint64_t frames = 0, bytes = 0, bad = 0, gaps = 0;
+      std::uint32_t first = 0, last = 0, w = 0, h = 0;
+    } acc;
+    auto sub = session_->declare_subscriber(ke(keys::kVideo), [&acc](const zenoh::Sample & s) {
+      v1::VideoFrame f;
+      const auto v = s.get_payload().as_vector();
+      std::lock_guard<std::mutex> lock(acc.m);
+      if (!f.ParseFromArray(v.data(), static_cast<int>(v.size())) || f.data().size() < 4 ||
+          static_cast<unsigned char>(f.data()[0]) != 0xff || static_cast<unsigned char>(f.data()[1]) != 0xd8) {
+        ++acc.bad;  // not a JPEG (SOI marker)
+        return;
+      }
+      if (acc.frames == 0) {
+        acc.first = f.frame_id();
+      } else if (f.frame_id() > acc.last + 1) {
+        acc.gaps += f.frame_id() - acc.last - 1;
+      }
+      acc.last = f.frame_id();
+      ++acc.frames;
+      acc.bytes += f.data().size();
+      acc.w = f.width();
+      acc.h = f.height();
+    }, [] {});
+    std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+    std::lock_guard<std::mutex> lock(acc.m);
+    std::printf("VIDEO frames=%llu fps=%.1f size_kb=%.1f lost=%llu bad=%llu w=%u h=%u\n",
+      static_cast<unsigned long long>(acc.frames), static_cast<double>(acc.frames) / seconds,
+      acc.frames ? static_cast<double>(acc.bytes) / static_cast<double>(acc.frames) / 1024.0 : 0.0,
+      static_cast<unsigned long long>(acc.gaps), static_cast<unsigned long long>(acc.bad), acc.w, acc.h);
+    std::fflush(stdout);
+  }
+
   void summary() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::printf("SUMMARY states=%s rtt_ms_avg=%.2f rtt_ms_max=%.2f states_rx=%llu last_reason=%s\n",
@@ -305,6 +343,8 @@ int main(int argc, char ** argv) {
       deck.stream(0.2, 0);         // release
       deck.stream(after, 0, 1.0f, 0, true);
       deck.stream(0.3, 0);
+    } else if (cmd == "video") {
+      deck.video(arg_or(args, 1, 3.0));
     } else if (cmd == "watch") {
       std::this_thread::sleep_for(std::chrono::duration<double>(arg_or(args, 1, 2.0)));
     } else {

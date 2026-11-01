@@ -381,6 +381,39 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
   - GUI: connected, cleared, drove with L2, B and touch STOP, the panel, Quit. All worked.
   - The event log showed one touch STOP logged 5 times: it fired every frame while held. Fixed to fire on touch-down only.
 
+## Phase 4: M2 Video (started 2026-11-01)
+
+### 4.1 `deck_video` and video in the Deck app
+
+- **`deck_video::VideoPublisher`** (composable C++ node):
+  - On demand: a Zenoh matching listener sets a flag, and the executor thread creates or drops the camera subscription.
+  - Sensor QoS with depth 1, newest image only, scaled to 480 px wide (`INTER_AREA`), JPEG quality 70; frames over 512 KB are dropped.
+  - The capture stamp is converted to the steady clock; the encode time travels in the frame.
+  - `robot.launch.py` runs it in its own respawning container, or loads it into the camera driver's with `video_container:=`. The gateway now fills `Info.camera`, and `fake_deck video` measures the stream.
+- **On demand verified:** camera subscriptions go 0 → 1 → 0 as a Deck starts and stops watching.
+- **Deck app:** `deck_core::video`:
+  - a newest-only slot feeds a zune-jpeg decode thread;
+  - a 5 s stats window covers fps, delivery (`frame_id` gaps), size, and capture→encoded, encoded→received (via the clock offset), received→decoded, decoded→shown and capture→shown.
+  - The app shows the frame scaled to fit, NO VIDEO after 1 s (last frame dimmed), and the latency table in the debug overlay.
+  - One process-wide Deck clock now serves Control, RTT and video. 29 controller tests.
+- **The 25 fps dip was in ROS, not the video path.** `deck_video` forwarded every image it got (images in = frames out). Cross-process Fast DDS, best effort, at 30 Hz:
+
+  | Image | Arrived |
+  |---|---|
+  | 640×480 bgr8 (900 KB) | 75 / 90 |
+  | 480×360 bgr8 (506 KB) | 90 / 90 |
+  | 320×240 bgr8 (225 KB) | 90 / 90 |
+
+  - The sim camera now defaults to 480×360. Its static pattern is drawn once (0.2 ms per frame).
+  - The docs now recommend loading `deck_video` into the camera's container on a real robot.
+  - Result: 30.0 fps, 0 lost.
+- **Layout:** STOP covered the video, so STOP, the deadman/turbo indicators, the hints and the help moved into a bottom bar.
+- **Weak link (O19):** after a stable 30 fps, the video lagged, then:
+  - late controls (175 ms), a watchdog trip, lease expiry and token loss;
+  - a reconnect about 2 s later as a new owner, latched.
+
+  The safety behaved correctly. Power saving was on (O16), and the Deck was at −64 dBm. The likely amplifier: all best-effort traffic shares one QUIC datagram FIFO of quinn's default 1 MiB (about 1.7 s of video), which Zenoh doesn't configure, and video has no rate adaptation. To be measured with `tc`.
+
 ---
 
 ## How to keep this log

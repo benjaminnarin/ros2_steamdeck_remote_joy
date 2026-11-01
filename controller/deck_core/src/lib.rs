@@ -6,6 +6,7 @@ pub mod events;
 pub mod health;
 pub mod input;
 pub mod profiles;
+pub mod video;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -13,7 +14,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
-use deck_msgs::v1::{self, ButtonHint, ClearStopReply, ClearStopRequest, Control, Info, RobotState, Stop};
+use deck_msgs::v1::{self, ButtonHint, CameraInfo, ClearStopReply, ClearStopRequest, Control, Info, RobotState, Stop, VideoFrame};
 use deck_msgs::{keys, Message};
 use serde_json::json;
 use zenoh::qos::{CongestionControl, Priority, Reliability};
@@ -28,15 +29,23 @@ pub const SUPPORTED_INTERFACE: u32 = deck_msgs::INTERFACE_VERSION;
 const CONTROL_PERIOD: Duration = Duration::from_millis(20);
 const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Monotonic microseconds since the app started (the Deck clock in Control.deck_time_us).
+static START: OnceLock<Instant> = OnceLock::new();
+
+/// The Deck clock: monotonic microseconds since the process started. Used for
+/// Control.deck_time_us, RTT, and video timing, so they all line up.
+pub fn mono_us() -> u64 {
+    START.get_or_init(Instant::now).elapsed().as_micros() as u64 + 1 // never 0: 0 = "no echo"
+}
+
 #[derive(Clone)]
-pub struct Clock(Instant);
+pub struct Clock;
 impl Clock {
     pub fn new() -> Self {
-        Clock(Instant::now())
+        let _ = mono_us();
+        Clock
     }
     pub fn now_us(&self) -> u64 {
-        self.0.elapsed().as_micros() as u64 + 1 // never 0: 0 means "no echo" on the wire
+        mono_us()
     }
 }
 impl Default for Clock {
@@ -67,6 +76,11 @@ pub struct Snapshot {
     /// Short-lived messages for the UI (e.g. "clear refused: sticks not centered").
     pub notices: Vec<(u64, String)>,
     pub controls_sent: u64,
+    pub camera: Option<CameraInfo>,
+    pub video_live: bool,
+    pub video_ever: bool,
+    pub video: video::Stats,
+    pub clock_offset_us: Option<i64>,
 }
 
 struct Links {
@@ -75,6 +89,7 @@ struct Links {
     stop: zenoh::pubsub::Publisher<'static>,
     _token: zenoh::liveliness::LivelinessToken,
     _state_sub: zenoh::pubsub::Subscriber<()>,
+    _video_sub: zenoh::pubsub::Subscriber<()>,
 }
 
 #[derive(Default)]
@@ -85,6 +100,7 @@ struct State {
     info_ok: bool,
     robot_name: String,
     button_hints: Vec<ButtonHint>,
+    camera: Option<CameraInfo>,
     latch: StopLatch,
     pad: Option<String>,
     last_frame: input::Frame,
@@ -99,6 +115,7 @@ pub struct DeckCore {
     log: Arc<EventLog>,
     state: Mutex<State>,
     links: OnceLock<Links>,
+    video: Arc<video::Video>,
     touch_stop: AtomicBool,
     panel_open: AtomicBool,
     quit: AtomicBool,
@@ -119,7 +136,7 @@ pub trait PadSource {
 pub type PadFactory = Box<dyn FnOnce() -> Box<dyn PadSource> + Send>;
 
 pub fn session_id(clock: &Clock) -> u32 {
-    let seed = (clock.0.elapsed().as_nanos() as u64)
+    let seed = clock.now_us()
         ^ std::process::id() as u64
         ^ std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
     let mixed = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15);
@@ -163,6 +180,7 @@ impl DeckCore {
             state: Mutex::new(State { health: Some(Health::new(session_id)), robot_name: profile.profile.name.clone(), ..Default::default() }),
             profile,
             links: OnceLock::new(),
+            video: video::Video::new(),
             touch_stop: AtomicBool::new(false),
             panel_open: AtomicBool::new(false),
             quit: AtomicBool::new(false),
@@ -179,6 +197,11 @@ impl DeckCore {
 
     pub fn session_id(&self) -> u32 {
         self.session_id
+    }
+
+    /// Decoded video frames for the UI (kept out of Snapshot so frames aren't cloned per draw).
+    pub fn video(&self) -> &video::Video {
+        &self.video
     }
 
     pub fn now_us(&self) -> u64 {
@@ -227,6 +250,11 @@ impl DeckCore {
             button_hints: st.button_hints.clone(),
             notices: st.notices.clone(),
             controls_sent: st.controls_sent,
+            camera: st.camera,
+            video_live: self.video.live(now),
+            video_ever: self.video.ever(),
+            video: self.video.stats(now),
+            clock_offset_us: h.clock_offset_us(),
         }
     }
 
@@ -281,6 +309,18 @@ impl DeckCore {
             })
             .wait()
             .map_err(|e| anyhow!("robot_state: {e}"))?;
+        let me = self.clone();
+        let video_sub = session
+            .declare_subscriber(keys::VIDEO)
+            .callback(move |sample| {
+                let now = me.clock.now_us();
+                if let Ok(f) = VideoFrame::decode(&*sample.payload().to_bytes()) {
+                    let offset = me.state.lock().unwrap().health.as_ref().and_then(|h| h.clock_offset_us());
+                    me.video.push(f, now, offset);
+                }
+            })
+            .wait()
+            .map_err(|e| anyhow!("video: {e}"))?;
         let control = session
             .declare_publisher(keys::CONTROL)
             .congestion_control(CongestionControl::Drop)
@@ -299,7 +339,7 @@ impl DeckCore {
             .encoding(zenoh::bytes::Encoding::from(keys::encoding("Stop")))
             .wait()
             .map_err(|e| anyhow!("stop: {e}"))?;
-        Ok(Links { session, control, stop, _token: token, _state_sub: state_sub })
+        Ok(Links { session, control, stop, _token: token, _state_sub: state_sub, _video_sub: video_sub })
     }
 
     fn on_robot_state(&self, m: RobotState) {
@@ -357,6 +397,7 @@ impl DeckCore {
         }
         st.robot_name = info.robot_name.clone();
         st.button_hints = info.button_hints.clone();
+        st.camera = info.camera;
         st.info_ok = true;
         drop(st);
         self.log.log("connected", now, json!({"robot_name": info.robot_name, "interface_minor": info.interface_minor}));

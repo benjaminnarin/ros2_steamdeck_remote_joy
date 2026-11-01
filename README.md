@@ -68,7 +68,7 @@ Beyond these (H.264/WebRTC, FEC, multiple cameras, maps, Flatpak, ...): [docs/fu
 ├── robot/
 │   ├── deck_gateway/      # C++: safety, status, actions, info. Router config, launch, pair tool.
 │   ├── deck_router/       # ✅ Rust: the Zenoh router (QUIC + mTLS, access control), see O17
-│   ├── deck_video/        # C++ composable node: Image → JPEG → Zenoh
+│   ├── deck_video/        # ✅ C++ composable node: Image → JPEG → Zenoh, on demand
 │   └── deck_sim/          # ✅ simulated robot for development and CI (turtlesim, test camera, fake status)
 ├── spike/                 # M0 spike and the turtlesim demo (throwaway)
 └── deploy/systemd/
@@ -104,7 +104,7 @@ Then launch **Steam Deck Remote Joy** from Game Mode. Full steps: [docs/deployme
 
 ## Status
 
-M0 passed. **M1 Drive works end to end on the Deck:** the Deck app (`controller/`), `deck_router`, `deck_gateway` (safety core, node, `pair`, launch tests) and `deck_sim`. Driving with the L2 deadman, STOP, clear, REARM and handover have all been tested over Wi-Fi. Next: video (M2). The docs are the spec.
+M0 passed. **M1 Drive works end to end on the Deck:** the Deck app (`controller/`), `deck_router`, `deck_gateway` (safety core, node, `pair`, launch tests) and `deck_sim`. Driving with the L2 deadman, STOP, clear, REARM and handover have all been tested over Wi-Fi. **M2 Video:** `deck_video` (on demand) and video in the app run at 30 fps; open: rate adaptation on weak links (O19). The docs are the spec.
 
 ```bash
 scripts/setup_dev.sh            # once: install dependencies (--check to only report)

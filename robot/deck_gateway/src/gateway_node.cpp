@@ -103,6 +103,9 @@ public:
     robot_name_ = declare_parameter<std::string>("robot_name", "robot");
     // SHA-256 of the robot CA (hex); robot.launch.py computes it from tls_dir/ca.pem.
     robot_id_ = parse_hex(declare_parameter<std::string>("robot_id", ""));
+    camera_available_ = declare_parameter<bool>("camera_available", false);
+    camera_max_width_ = static_cast<std::uint32_t>(declare_parameter<int>("camera_max_width", 480));
+    camera_max_fps_ = static_cast<std::uint32_t>(declare_parameter<int>("camera_max_fps", 30));
     const auto endpoint = declare_parameter<std::string>("zenoh_endpoint", "tcp/127.0.0.1:7451");
     const double state_rate_hz = declare_parameter<double>("state_rate_hz", 5.0);
     state_every_ticks_ = std::max(1, static_cast<int>(std::lround(50.0 / state_rate_hz)));
@@ -286,7 +289,10 @@ private:
     info.set_robot_name(robot_name_);
     info.set_interface_version(v1::kInterfaceVersion);
     info.set_interface_minor(v1::kInterfaceMinor);
-    info.mutable_camera()->set_available(false);  // deck_video (M2) will fill this in
+    auto * cam = info.mutable_camera();
+    cam->set_available(camera_available_);
+    cam->set_width(camera_max_width_);   // upper bound; each VideoFrame carries its real size
+    cam->set_max_fps(camera_max_fps_);
     info.set_robot_id(robot_id_);
     zenoh::Query::ReplyOptions opts;
     opts.encoding = zenoh::Encoding(v1::encoding("Info"));
@@ -386,6 +392,9 @@ private:
   core::SafetyCore core_;
   std::string robot_name_;
   std::string robot_id_;  // raw bytes
+  bool camera_available_ = false;
+  std::uint32_t camera_max_width_ = 480;
+  std::uint32_t camera_max_fps_ = 30;
   int state_every_ticks_ = 10;
   std::uint64_t ticks_ = 0;
   bool last_latched_ = true;
