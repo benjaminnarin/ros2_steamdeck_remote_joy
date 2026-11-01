@@ -1,0 +1,19 @@
+[package]
+name = "deck_app"
+description = "Steam Deck remote joy: the Deck app (egui) and CLI"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "steamdeck-remote-joy"
+path = "src/main.rs"
+
+[dependencies]
+deck_core.workspace = true
+deck_msgs.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+eframe.workspace = true
+gilrs.workspace = true
+serde_json.workspace = true

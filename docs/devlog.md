@@ -365,6 +365,22 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
 - **First run:** 10/11. The failure was in `fake_deck`: its `clear` sent a neutral control just before the request, so a refusal could never be provoked. It now repeats the held input.
 - **Then 4 clean runs in a row** (about 33 s each). The package now has 54 tests (31 gtest, 12 pytest, 11 launch).
 
+### 3.10 The Deck app (M1)
+
+- **`deck_core`** (no UI):
+  - `input.rs`: 0.12 radial deadzone, X negated, triggers clamped, B and touch STOP, Menu tap versus the View + Menu combo (1 s, sticks centered, L2 released; it restarts once the conditions hold), and neutral output while the panel is open. Plus `StopLatch` for the `released_seq` handshake, where a late OK can't undo a newer STOP.
+  - `health.rs`: RTT and clock offset from our own echoes only. LINK LOST after 300 ms of silence while owner, 600 ms otherwise (the 5 Hz heartbeat). BUSY is derived from `owner_session`. The overlay is chosen in priority order.
+  - `profiles.rs`: imports `pair` bundles and checks that `id` = SHA-256 of `ca.pem`.
+  - `events.rs`: the JSON-lines log.
+  - `lib.rs`: session and control threads. No Control is sent until `Info` arrives and its `robot_id` matches the profile and the interface version is supported. `shutdown()` sends Stop, then closes.
+  - `pins.rs` keeps zenoh 1.10.2 and `quinn-proto` ≥ 0.11.18.
+- **`deck_app`:** the egui Drive screen (top bar, banners, deadman and turbo indicators, hints, clear progress, touch STOP, a Menu panel with Quit) and the CLI (`robot add/list/forget`, `probe`, `log`). `controller/scripts/deploy_deck.sh` is the dev deploy, until the M5 packaging.
+- **Tests:** 26 (the input combos, the latch handshake, health and overlays, events, bundle import and its tamper check, pins). One test bug: a stick at (1, 1) is outside the circle, so the radial deadzone correctly scales it to about 0.71.
+- **On the Deck:**
+  - `robot add` with the `pair` bundle, then `probe`: Info, robot ID matches, 5 Hz heartbeat.
+  - GUI: connected, cleared, drove with L2, B and touch STOP, the panel, Quit. All worked.
+  - The event log showed one touch STOP logged 5 times: it fired every frame while held. Fixed to fire on touch-down only.
+
 ---
 
 ## How to keep this log

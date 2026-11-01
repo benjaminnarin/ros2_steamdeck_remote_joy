@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Steam Deck Remote Joy
+Comment=Drive a ROS 2 robot
+Exec=/home/deck/steamdeck-remote-joy/run.sh
+Terminal=false
+Categories=Game;

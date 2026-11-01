@@ -64,7 +64,7 @@ Beyond these (H.264/WebRTC, FEC, multiple cameras, maps, Flatpak, ...): [docs/fu
 .
 ├── docs/                  # architecture, interface, controller, robot, deployment, future
 ├── interface/             # ✅ ament_cmake pkg remote_joy_interface: .proto files + generated C++ library
-├── controller/            # Cargo workspace (COLCON_IGNORE): deck_msgs ✅, deck_core, deck_app, packaging/
+├── controller/            # Cargo workspace (COLCON_IGNORE): deck_msgs ✅, deck_core ✅, deck_app ✅ (M1), packaging/ (M5)
 ├── robot/
 │   ├── deck_gateway/      # C++: safety, status, actions, info. Router config, launch, pair tool.
 │   ├── deck_router/       # ✅ Rust: the Zenoh router (QUIC + mTLS, access control), see O17
@@ -104,7 +104,7 @@ Then launch **Steam Deck Remote Joy** from Game Mode. Full steps: [docs/deployme
 
 ## Status
 
-M0 passed. **M1 in progress:** the Protobuf interface (`interface/`, `controller/deck_msgs`) and the simulated robot (`robot/deck_sim`) are built and tested. Next: `deck_gateway`, then the Deck app. The docs are the spec.
+M0 passed. **M1 Drive works end to end on the Deck:** the Deck app (`controller/`), `deck_router`, `deck_gateway` (safety core, node, `pair`, launch tests) and `deck_sim`. Driving with the L2 deadman, STOP, clear, REARM and handover have all been tested over Wi-Fi. Next: video (M2). The docs are the spec.
 
 ```bash
 scripts/setup_dev.sh            # once: install dependencies (--check to only report)

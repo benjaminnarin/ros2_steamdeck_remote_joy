@@ -23,29 +23,30 @@
 
 ```
 controller/
-├── Cargo.toml                 # workspace; zenoh version pinned (see interface/ZENOH_VERSION)
+├── Cargo.toml                 # workspace; zenoh pinned to interface/ZENOH_VERSION crates=
 ├── COLCON_IGNORE
-├── crates/
-│   ├── deck_msgs/             # build.rs: prost-build over ../../interface/proto
-│   ├── deck_core/             # no UI dependency
-│   │   ├── session.rs         # Zenoh session (client, TLS from profile), connect()/disconnect(), auto-reconnect
-│   │   ├── profiles.rs        # robot profiles keyed by robot ID, stored under ~/.config/.../robots/
-│   │   ├── locator.rs         # trait RobotLocator; StaticLocator only in the MVP
-│   │   ├── links/             # trait Link; Static only in the MVP (Wi-Fi AP, Bluetooth post-MVP)
-│   │   ├── pairing/           # trait PairingMethod; FileBundle only in the MVP (online enrollment post-MVP)
-│   │   ├── input.rs           # gilrs → snapshot, deadzones, STOP/CLEAR combos, menu-neutral (pure, unit-tested)
-│   │   ├── control.rs         # control thread: 50 Hz + on change, Stop on press
-│   │   ├── health.rs          # RobotState → link state, RTT, clock offset, ownership
-│   │   ├── video.rs           # frame queue (capacity 1) → decode thread → latest RGBA frame + stats
-│   │   ├── status.rs          # latest Status, items marked stale when old
-│   │   ├── queries.rs         # info, clear_stop, actions (worker thread, results to UI)
-│   │   ├── events.rs          # local event log (JSON lines)
-│   │   └── lib.rs             # DeckCore::start(config) → handle the UI reads from
-│   └── deck_app/              # egui screens + CLI (binary: steamdeck-remote-joy)
-└── packaging/                 # build.sh, install.sh, uninstall.sh, .desktop, steam_input/
+├── deck_msgs/                 # build.rs: protox + prost over ../../interface/proto  ✅
+├── deck_core/                 # no UI dependency  ✅ (M1 parts)
+│   ├── src/lib.rs             # DeckCore::start(profile, log, pad) → snapshot(); session + control threads,
+│   │                          #   Info/robot-ID/version check, clear_stop worker, shutdown(); probe()
+│   ├── src/input.rs           # gilrs snapshot → wire axes, deadzones, STOP/CLEAR combos, Menu tap,
+│   │                          #   panel-neutral; StopLatch (released_seq handshake). Pure, unit-tested.
+│   ├── src/health.rs          # RobotState → link up/lost, RTT, clock offset, ownership, overlay. Pure, tested.
+│   ├── src/profiles.rs        # pair bundle import (checks id = SHA-256 of ca.pem), list, forget, active
+│   ├── src/events.rs          # JSON-lines event log, rotated
+│   └── tests/                 # pins.rs (zenoh pin, quinn-proto >= 0.11.18), profiles.rs
+│   (later: video.rs M2, status.rs M3, actions in queries M4; locator/links/pairing traits post-MVP)
+├── deck_app/                  # egui Drive screen + CLI (binary: steamdeck-remote-joy)  ✅ (M1)
+│   ├── src/main.rs            # CLI: run, robot add/list/forget, probe, log
+│   ├── src/ui.rs              # Drive screen: top bar, banners, deadman/turbo, hints, clear progress, touch STOP, panel
+│   └── src/pad.rs             # gilrs → RawPad (joy button order)
+├── scripts/                   # deploy_deck.sh (dev deploy), run.sh, .desktop
+└── packaging/                 # M5: build.sh, install.sh, uninstall.sh, steam_input/
 ```
 
 `deck_core` holds everything that matters for safety and networking, so the UI could be replaced later without touching it.
+
+**Dev deploy** (until M5 packaging): `controller/scripts/deploy_deck.sh [deck@steamdeck]` builds here and copies the binary, `run.sh` and the `.desktop` to `~/steamdeck-remote-joy` on the Deck. `BUNDLE=<file>` also runs `robot add --bundle`, and `ADD_TO_STEAM=1` adds the Non-Steam Game entry.
 
 ## Connection
 
@@ -56,7 +57,7 @@ controller/
   2. query `Info` and check `Info.robot_id` against the profile. A mismatch aborts with a "wrong robot" error.
 
   The robot is STOPPED on arrival (new-owner rule), so the operator sees the camera and the robot's name before clearing STOP.
-- **Reconnect:** after a drop, the app retries automatically (backoff up to 2 s) and shows LINK LOST until it's back. It keeps the same `session_id` for the whole app run. After a short drop the robot is in **REARM** (the banner says "release and press LB to resume"). After a drop over 1 s it's STOPPED (`link_lost`).
+- **Reconnect:** after a drop, the app retries automatically (backoff up to 2 s) and shows LINK LOST until it's back. It keeps the same `session_id` for the whole app run. After a short drop the robot is in **REARM** (the banner says "release L2, then press it again"). After a drop over 1 s it's STOPPED (`link_lost`).
 - **`disconnect()`** runs on quit: send `Stop` (reliable), withdraw the liveliness token, close the session. The robot stops and releases control straight away.
 - **Wrong-robot guard:** the robot's name is shown prominently in the top bar, and the STOP-clear prompt names it ("Clear STOP on **mybot**?").
 
@@ -128,9 +129,9 @@ The video and the STOP button stay visible.
 |---------------|------|------|
 | NO CONTROLLER | No gamepad | Grey, centered message |
 | CONNECTING | Zenoh session not up, or no `RobotState` yet | Amber |
-| CONNECTED | `RobotState` for our session within 300 ms | Green |
-| LINK LOST | No `RobotState` for 300 ms | Red flashing bar |
-| BUSY | `RobotState.state = BUSY` | Amber, "another Deck is driving" |
+| CONNECTED | `RobotState` within 300 ms while we own the robot (50 Hz echoes), or within 600 ms otherwise (5 Hz heartbeat) | Green |
+| LINK LOST | No `RobotState` within that time | Red bar |
+| BUSY | `RobotState.owner_session` is another session's (the gateway never sends `BUSY`) | Amber, "another Deck is driving" |
 | STOPPED | Local latch or `state = STOPPED` | Red border + banner "STOP (teleop)" showing `stop_reason` |
 | REARM | `state = REARM` | Amber banner: "release and press L2 to resume" |
 | NO VIDEO | No frame for 1 s | Last frame dimmed with "NO VIDEO" (the controls still work) |
