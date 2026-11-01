@@ -100,6 +100,7 @@ Then launch **Steam Deck Remote Joy** from Game Mode. Full steps: [docs/deployme
 | [deployment.md](docs/deployment.md) | Build, pairing, Wi-Fi setup, install, commissioning |
 | [future.md](docs/future.md) | Beyond the milestones, plus fallback designs |
 | [devlog.md](docs/devlog.md) | How the design evolved and how it was tested, kept for a write-up |
+| [upstream.md](docs/upstream.md) | Draft reports for other projects (Zenoh, rmw_zenoh, ...). Not filed; reviewed at the end of the project |
 
 ## Status
 

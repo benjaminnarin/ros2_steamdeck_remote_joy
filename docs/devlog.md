@@ -283,4 +283,5 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
 
 - Add an entry whenever a decision changes the design, a test produces numbers, or something fails in an instructive way.
 - Record the setup (versions, network, power settings) next to any measurements.
+- Upstream problems (bugs, doc gaps in other projects) go into [upstream.md](upstream.md) as drafts with their evidence. Nothing is filed until the end-of-project review.
 - Link commits by hash, and keep raw logs (e.g. Deck logs under `~/rj-spike/logs/`) if a result might be questioned later.
