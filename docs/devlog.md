@@ -201,6 +201,15 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
   - New setuptools ignores `tests_require`, so colcon silently ran 0 tests until it moved to `extras_require`.
   - `pkill -f` matched its own shell again; use exact process names.
 
+### 3.2 Reproducible dev setup
+
+- **Problem:** so far everything had been installed by hand: rustup user-level, a pip venv for the demo, and protobuf via a manual `apt`. A fresh machine had no record of any of it, and `deployment.md`'s apt list was Jazzy-only and missing protobuf.
+- **Fix:**
+  - `scripts/setup_dev.sh` (and `--check`) installs everything declared in the `package.xml` files via rosdep, plus colcon/rosdep themselves and Rust via rustup.
+  - Rust is pinned to 1.99.1 in `controller/rust-toolchain.toml`.
+  - The script holds no package list of its own. **Rule: every new dependency goes into a `package.xml` or `Cargo.toml`.**
+- **First `--check` run** found `libprotoc-dev` still missing (rosdep's `protobuf-dev` key includes it) and the pinned Rust not yet installed. The pinned toolchain then passed the Rust tests and clippy.
+
 ---
 
 ## How to keep this log

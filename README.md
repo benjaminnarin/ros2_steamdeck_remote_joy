@@ -105,6 +105,7 @@ Then launch **Steam Deck Remote Joy** from Game Mode. Full steps: [docs/deployme
 M0 passed. **M1 in progress:** the Protobuf interface (`interface/`, `controller/deck_msgs`) and the simulated robot (`robot/deck_sim`) are built and tested. Next: `deck_gateway`, then the Deck app. The docs are the spec.
 
 ```bash
+scripts/setup_dev.sh            # once: install dependencies (--check to only report)
 # Build and test what exists (from the repo root, ROS 2 Jazzy or Lyrical sourced)
 colcon build --symlink-install && colcon test && colcon test-result --verbose
 (cd controller && cargo test)

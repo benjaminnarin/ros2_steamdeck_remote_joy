@@ -9,18 +9,25 @@
 
 Releases are git tags `vX.Y.Z`. Within an interface version, the Deck and the robot can be upgraded independently ([interface.md § Versioning](interface.md#versioning)). The Deck tells you if the robot needs a newer app.
 
+## Development machine
+
+```bash
+scripts/setup_dev.sh --check   # report what's missing (no changes)
+scripts/setup_dev.sh           # install it: colcon/rosdep, every package.xml dependency, Rust via rustup
+```
+
+The script lists no packages itself. ROS and system dependencies come from the `package.xml` files (rosdep keys), Rust crates from `controller/Cargo.toml`/`Cargo.lock`, and the Rust version from `controller/rust-toolchain.toml`. **Every new dependency goes into one of those files**, never only into a manual install, so a fresh machine (or CI) gets the same setup. Rust is installed user-level in `~/.cargo`, with no sudo. The Deck build compiles `.proto` files with protox, so it doesn't need `protoc`.
+
 ## Robot (x86, Ubuntu 24.04 + ROS 2 Jazzy, or Ubuntu 26.04 + ROS 2 Lyrical)
 
 ### Build
 
 ```bash
-sudo apt install ros-jazzy-ros-base ros-jazzy-teleop-twist-joy ros-jazzy-cv-bridge \
-                 ros-jazzy-zenoh-cpp-vendor ros-jazzy-rmw-zenoh-cpp \
-                 libopencv-dev libprotobuf-dev protobuf-compiler openssl \
-                 python3-colcon-common-extensions
+# ROS 2 base install first (ros-<distro>-ros-base, see docs.ros.org), then:
+sudo apt install python3-colcon-common-extensions python3-rosdep
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
 git clone --branch vX.Y.Z <repo-url> ros2_steamdeck_remote_joy
-cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y
+cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y   # everything else, from package.xml
 colcon build --packages-up-to deck_gateway deck_video
 source install/setup.bash
 ```
