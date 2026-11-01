@@ -1,0 +1,10 @@
+# message: remote_joy.v1.Info
+robot_name: "mybot"
+interface_version: 1
+interface_minor: 0
+actions { id: "dock" label: "Dock" confirm: true moves_robot: true }
+actions { id: "lights_on" label: "Lights on" }
+camera { available: true width: 480 height: 270 max_fps: 30 }
+robot_id: "\x01\x02\x03\xfe"
+button_hints { button: 0 label: "Horn" }
+button_hints { button: 2 label: "Lights" }

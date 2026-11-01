@@ -58,17 +58,18 @@ Beyond these (H.264/WebRTC, FEC, multiple cameras, maps, Flatpak, ...): [docs/fu
 | **Menu** (tap) | Open/close the Status & Actions panel. Driving input is neutral while it's open. |
 | **A, X, Y, D-pad, L3/R3, triggers** | Free for the robot (e.g. horn, lights), labelled on screen by the robot's button hints |
 
-## Repository layout (planned)
+## Repository layout
 
 ```
 .
 ├── docs/                  # architecture, interface, controller, robot, deployment, future
-├── interface/             # ament_cmake pkg remote_joy_interface: .proto files + generated C++ library
-├── controller/            # Cargo workspace (COLCON_IGNORE): deck_msgs, deck_core, deck_app, packaging/
+├── interface/             # ✅ ament_cmake pkg remote_joy_interface: .proto files + generated C++ library
+├── controller/            # Cargo workspace (COLCON_IGNORE): deck_msgs ✅, deck_core, deck_app, packaging/
 ├── robot/
 │   ├── deck_gateway/      # C++: safety, status, actions, info. Router config, launch, pair tool.
 │   ├── deck_video/        # C++ composable node: Image → JPEG → Zenoh
-│   └── deck_sim/          # simulated robot for development and CI (turtlesim, test camera, fake status)
+│   └── deck_sim/          # ✅ simulated robot for development and CI (turtlesim, test camera, fake status)
+├── spike/                 # M0 spike and the turtlesim demo (throwaway)
 └── deploy/systemd/
 ```
 
@@ -101,4 +102,11 @@ Then launch **Steam Deck Remote Joy** from Game Mode. Full steps: [docs/deployme
 
 ## Status
 
-Design phase. The docs are the spec.
+M0 passed. **M1 in progress:** the Protobuf interface (`interface/`, `controller/deck_msgs`) and the simulated robot (`robot/deck_sim`) are built and tested. Next: `deck_gateway`, then the Deck app. The docs are the spec.
+
+```bash
+# Build and test what exists (from the repo root, ROS 2 Jazzy or Lyrical sourced)
+colcon build --symlink-install && colcon test && colcon test-result --verbose
+(cd controller && cargo test)
+ros2 launch deck_sim sim.launch.py
+```

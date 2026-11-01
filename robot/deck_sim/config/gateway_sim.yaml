@@ -1,0 +1,24 @@
+# deck_gateway settings matching what deck_sim provides (docs/robot.md § Configuration).
+# Passed to deck_gateway's robot.launch.py as gateway_config once that package exists.
+deck_gateway:
+  ros__parameters:
+    robot_name: deck_sim
+    watchdog_ms: 250
+    resume_grace_ms: 1000
+    max_control_delay_ms: 150
+    status_rate_hz: 2.0
+    status_items: |
+      - {key: battery.pct, label: Battery, topic: /battery_state, type: BatteryState,
+         field: percentage, unit: "%", group: Power, pin: true, warn_below: 25, error_below: 10}
+      - {key: battery.v, label: Voltage, topic: /battery_state, type: BatteryState,
+         field: voltage, unit: V, group: Power}
+      - {key: speed, label: Speed, topic: /odom, type: Odometry, field: speed, unit: m/s, group: Motion}
+      - {key: lights, label: Lights, topic: /lights_on, type: Bool, field: data, group: Robot}
+      - {key: diagnostics, topic: /diagnostics, type: DiagnosticArray}
+    actions: |
+      - {id: dock, label: Dock, service: /dock, type: Trigger, confirm: true, moves_robot: true}
+      - {id: lights_on, label: Lights on, service: /lights, type: SetBool, value: true}
+      - {id: lights_off, label: Lights off, service: /lights, type: SetBool, value: false}
+    button_hints: |
+      - {button: A, label: Horn}
+      - {button: X, label: Lights}

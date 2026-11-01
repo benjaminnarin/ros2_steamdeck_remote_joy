@@ -1,0 +1,5 @@
+# Exported to packages that find_package(remote_joy_interface).
+# REMOTE_JOY_ZENOH_VERSION: the pinned Zenoh version, for downstream builds to check
+# against the zenoh-cpp/zenoh-c they link.
+file(STRINGS "${remote_joy_interface_DIR}/../ZENOH_VERSION" REMOTE_JOY_ZENOH_VERSION LIMIT_COUNT 1)
+set(REMOTE_JOY_PROTO_DIR "${remote_joy_interface_DIR}/../proto")

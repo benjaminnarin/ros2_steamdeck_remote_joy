@@ -220,4 +220,5 @@ A stretch of late controls therefore looks like a short drop, and is handled thr
 - **Additive changes** (new fields, new optional keys or actions) stay within `v1`: bump `Info.interface_minor`. Old Decks ignore unknown fields.
 - **Breaking changes** go under a new `rj/v2/` key prefix. The gateway may serve both prefixes during a transition.
 - The Deck reads `Info` on connect and shows "robot needs a newer app" if `interface_version` is unsupported.
+- **Wire-format tests:** `interface/test/golden/` holds messages encoded by `protoc`. The C++ library and the Deck's `deck_msgs` crate must both produce exactly those bytes, so a change that breaks compatibility fails both builds' tests.
 - **Zenoh version:** the Deck's `zenoh` crate is pinned to the version vendored in Jazzy (`zenoh_cpp_vendor`). The pinned version is recorded in `interface/ZENOH_VERSION` and checked by both builds.

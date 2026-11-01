@@ -1,0 +1,30 @@
+// Deck <-> robot interface v1: robot status panel.
+syntax = "proto3";
+package remote_joy.v1;
+
+// rj/v1/status: robot -> Deck, best effort, status_rate_hz (default 2).
+message Status {
+  uint64 robot_time_us      = 1;
+  repeated StatusItem items = 2;
+}
+
+message StatusItem {
+  enum Level {
+    LEVEL_UNSPECIFIED = 0;
+    OK = 1;
+    WARN = 2;
+    ERROR = 3;
+    STALE = 4;  // source topic silent for 3 s
+  }
+  string key   = 1;  // stable id, e.g. "battery.pct"
+  string label = 2;  // "Battery"
+  oneof value {
+    double number = 3;
+    string text   = 4;
+    bool   flag   = 5;
+  }
+  string unit   = 6;  // "%", "m/s", "V"
+  Level  level  = 7;
+  string group  = 8;  // UI grouping, e.g. "Power", "Diagnostics"
+  bool   pinned = 9;  // show in the Drive screen's top bar
+}

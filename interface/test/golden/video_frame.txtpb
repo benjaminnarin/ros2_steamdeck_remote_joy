@@ -1,0 +1,8 @@
+# message: remote_joy.v1.VideoFrame
+frame_id: 9
+capture_time_us: 1000000
+encode_done_offset_us: 4500
+width: 480
+height: 270
+codec: JPEG
+data: "\xff\xd8\xff\xd9"

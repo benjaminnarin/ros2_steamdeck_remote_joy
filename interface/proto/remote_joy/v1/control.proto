@@ -1,0 +1,89 @@
+// Deck <-> robot interface v1: driving and safety.
+// Keys, delivery settings and rules: docs/interface.md.
+syntax = "proto3";
+package remote_joy.v1;
+
+// Axis indices in Control.axes, in ROS 2 joy (SDL GameController) order.
+// On the wire: sticks +1 = left/up, triggers 0 (released) .. 1 (pressed).
+// Constants only; no field has this type.
+enum Axis {
+  AXIS_LEFT_X = 0;
+  AXIS_LEFT_Y = 1;
+  AXIS_RIGHT_X = 2;
+  AXIS_RIGHT_Y = 3;
+  AXIS_LEFT_TRIGGER = 4;
+  AXIS_RIGHT_TRIGGER = 5;
+  // 6-11 reserved (trackpads, gyro)
+}
+
+// Bit indices in Control.buttons (bit n = button n), in joy order.
+// Constants only; no field has this type.
+enum Button {
+  BUTTON_A = 0;
+  BUTTON_B = 1;            // STOP (reserved for the Deck)
+  BUTTON_X = 2;
+  BUTTON_Y = 3;
+  BUTTON_VIEW = 4;         // reserved for the Deck
+  BUTTON_STEAM = 5;        // normally taken by Steam
+  BUTTON_MENU = 6;         // reserved for the Deck
+  BUTTON_L3 = 7;
+  BUTTON_R3 = 8;
+  BUTTON_LB = 9;           // deadman
+  BUTTON_RB = 10;          // turbo
+  BUTTON_DPAD_UP = 11;
+  BUTTON_DPAD_DOWN = 12;
+  BUTTON_DPAD_LEFT = 13;
+  BUTTON_DPAD_RIGHT = 14;
+  BUTTON_MISC = 15;        // Quick Access, normally taken by Steam
+  BUTTON_PADDLE1 = 16;     // 16-19 paddles, reserved
+  BUTTON_PADDLE2 = 17;
+  BUTTON_PADDLE3 = 18;
+  BUTTON_PADDLE4 = 19;
+  BUTTON_TOUCHPAD = 20;
+  // 21-31 reserved
+}
+
+// rj/v1/control: Deck -> robot, best effort, 50 Hz + on button change.
+message Control {
+  fixed32 session_id   = 1;  // random per Deck app run; kept across reconnects
+  uint32  seq          = 2;  // +1 per message
+  uint64  deck_time_us = 3;  // Deck monotonic clock
+  repeated float axes  = 4;  // see Axis; 6 used, up to 12
+  fixed32 buttons      = 5;  // bit n = button n (see Button)
+  bool    stop         = 6;  // Deck's local stop latch is set
+}
+
+// rj/v1/stop: Deck -> robot, reliable, on STOP press. Any paired session may send it.
+message Stop {
+  fixed32 session_id   = 1;
+  uint64  deck_time_us = 2;
+  string  source       = 3;  // "button_b", "touch", "quit"
+}
+
+// rj/v1/robot_state: robot -> Deck, best effort, on each owner Control + 5 Hz.
+message RobotState {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    OK = 1;
+    STOPPED = 2;
+    NO_CONTROL = 3;
+    BUSY = 4;
+    REARM = 5;  // release + press deadman to resume
+  }
+  uint64  robot_time_us     = 1;  // robot monotonic clock
+  State   state             = 2;
+  fixed32 owner_session     = 3;  // session currently in control (0 = none)
+  uint32  echo_seq          = 4;  // last Control seq from the owner
+  uint64  echo_deck_time_us = 5;  // its deck_time_us, unchanged -> RTT
+  string  stop_reason       = 6;  // "startup", "new_owner", "link_lost", "deck_stop", "service", ...
+}
+
+// rj/v1/clear_stop queryable.
+message ClearStopRequest {
+  fixed32 session_id   = 1;
+  uint32  released_seq = 2;  // first Control seq sent with stop = false
+}
+message ClearStopReply {
+  bool   ok     = 1;
+  string reason = 2;  // "sticks_not_centered", "not_owner", ...
+}

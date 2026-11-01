@@ -1,0 +1,7 @@
+# message: remote_joy.v1.RobotState
+robot_time_us: 987654321
+state: REARM
+owner_session: 0xdec0ffee
+echo_seq: 42
+echo_deck_time_us: 123456789012
+stop_reason: "link_lost"

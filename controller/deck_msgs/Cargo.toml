@@ -1,0 +1,13 @@
+[package]
+name = "deck_msgs"
+description = "Generated Rust types for the Deck <-> robot interface (interface/proto), plus key names"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+prost.workspace = true
+
+[build-dependencies]
+prost-build.workspace = true
+protox.workspace = true

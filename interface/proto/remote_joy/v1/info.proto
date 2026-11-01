@@ -1,0 +1,35 @@
+// Deck <-> robot interface v1: robot description, read on connect.
+syntax = "proto3";
+package remote_joy.v1;
+
+// rj/v1/info queryable.
+message InfoRequest {}
+
+message Info {
+  string robot_name                = 1;
+  uint32 interface_version         = 2;  // 1
+  uint32 interface_minor           = 3;  // additive revisions within v1
+  repeated ActionInfo actions      = 4;
+  CameraInfo camera                = 5;
+  bytes  robot_id                  = 6;  // SHA-256 of the robot CA certificate; Deck checks it against the profile
+  repeated ButtonHint button_hints = 7;  // what robot-side /joy listeners do with free buttons
+}
+
+message ActionInfo {
+  string id          = 1;
+  string label       = 2;
+  bool   confirm     = 3;
+  bool   moves_robot = 4;  // Deck greys these out while STOPPED/REARM/NO_CONTROL
+}
+
+message CameraInfo {
+  bool   available = 1;
+  uint32 width     = 2;
+  uint32 height    = 3;
+  uint32 max_fps   = 4;
+}
+
+message ButtonHint {
+  uint32 button = 1;  // bit index (see Button); shown on the Drive screen
+  string label  = 2;
+}

@@ -1,0 +1,5 @@
+# message: remote_joy.v1.Status
+robot_time_us: 5000000
+items { key: "battery.pct" label: "Battery" number: 72.5 unit: "%" level: OK group: "Power" pinned: true }
+items { key: "diag.motors" label: "motors" text: "Overcurrent" level: ERROR group: "Diagnostics" }
+items { key: "estop" label: "E-stop" flag: false level: STALE }

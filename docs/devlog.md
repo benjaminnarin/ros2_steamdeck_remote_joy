@@ -171,6 +171,36 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
 - Re-measuring with Wi-Fi power saving off.
 - Drive stack choice (O13).
 
+## Phase 3: M1 Drive (started 2026-11-01)
+
+### 3.1 Protobuf interface and simulated robot
+
+- **Order:** the interface and `deck_sim` came first, so the gateway and the Deck app both have something real to build and test against.
+- **`interface/` (`remote_joy_interface`):**
+  - The design-doc sketch, split into five files (`control`, `info`, `status`, `action`, `video`).
+  - New: `Axis` and `Button` enums. They're constants only, so the joy indices have one source of truth in both languages.
+  - A hand-written `keys.hpp` holds the key names and encodings.
+  - The `ZENOH_VERSION` pin is exported to CMake.
+- **`controller/deck_msgs` (Rust):** prost types generated at build time by **protox**, a pure-Rust `.proto` compiler. The Deck build needs no `protoc`, and the `.proto` files stay the only definition.
+- **Wire-format pinning:** golden vectors in `interface/test/golden/`, as text-format messages plus the bytes `protoc` encodes from them. The C++ and Rust tests must each reproduce those exact bytes. That's three independent implementations agreeing, which catches drift before it reaches the robot. A `Control` is 45 bytes, versus 40 for the spike's fixed struct.
+- **`robot/deck_sim`:**
+  - turtlesim as the base;
+  - `fake_robot`: battery that drains faster while moving and charges when docked, odometry, diagnostics, `/dock` and `/lights` services, and `/joy` A = horn, X = lights;
+  - `test_camera`: a moving test pattern showing the frame counter and timestamp. It replaced `image_publisher`, which isn't installed here, and makes dropped frames and latency visible.
+  - `sim.launch.py` includes `deck_gateway`'s launch once that package exists. Until then it starts `teleop_twist_joy` itself.
+- **Tests:**
+  - Golden tests: C++ (gtest) 9/9 and Rust 9/9 pass. The `.bin` files are byte-identical whether encoded by `protoc` 35.1 (the `grpcio-tools` build) or by Ubuntu's 3.21.12, the version ROS builds against.
+  - A scratch downstream CMake package found `remote_joy_interface`, linked it, and read `REMOTE_JOY_ZENOH_VERSION` (1.10.1), so `deck_gateway` can depend on it as is.
+  - `deck_sim` pytest: 12/12 pass.
+  - Sim smoke test:
+    - `/joy` with LB held drove the turtle 4.6 m.
+    - A logged a horn, and X turned the lights on.
+    - `/dock` sent the turtle home and refused a second dock.
+    - Diagnostics reported correctly, and the camera ran at about 25 fps.
+- **Snags:**
+  - New setuptools ignores `tests_require`, so colcon silently ran 0 tests until it moved to `extras_require`.
+  - `pkill -f` matched its own shell again; use exact process names.
+
 ---
 
 ## How to keep this log

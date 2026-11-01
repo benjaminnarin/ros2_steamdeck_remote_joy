@@ -1,0 +1,14 @@
+// Deck <-> robot interface v1: panel actions.
+syntax = "proto3";
+package remote_joy.v1;
+
+// rj/v1/action/<id> queryable. Owner only; 10 s timeout.
+message ActionRequest {
+  fixed32 session_id = 1;
+  string  id         = 2;
+}
+
+message ActionReply {
+  bool   ok      = 1;
+  string message = 2;  // service message, or a refusal: "not_owner", "stopped", "timeout", ...
+}

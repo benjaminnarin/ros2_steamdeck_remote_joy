@@ -14,8 +14,11 @@ Plus `teleop_twist_joy`, which turns `/joy` into `cmd_vel`.
 
 ```
 interface/                       # ament_cmake: remote_joy_interface
-├── proto/remote_joy/v1/*.proto  # source of truth (also used by the Deck's Rust build)
-├── ZENOH_VERSION
+├── proto/remote_joy/v1/*.proto  # source of truth: control, info, status, action, video
+│                                #   (also compiled by the Deck's Rust build, controller/deck_msgs)
+├── include/remote_joy_interface/keys.hpp   # Zenoh key names and encodings
+├── test/golden/                 # protoc-encoded vectors that pin the wire format for C++ and Rust
+├── ZENOH_VERSION                # exported as REMOTE_JOY_ZENOH_VERSION
 └── CMakeLists.txt               # protoc → libremote_joy_interface (C++), exported
 
 robot/deck_gateway/              # ament_cmake
@@ -38,7 +41,10 @@ robot/deck_video/                # ament_cmake, rclcpp_components
 
 robot/deck_sim/                  # ament_python: development and CI without a real robot
 ├── deck_sim/fake_robot.py       # BatteryState (slow drain), Odometry from cmd_vel, /diagnostics, /dock + /lights services,
-│                                #   and a /joy listener (A = "horn" log line) to exercise button hints
+│                                #   and a /joy listener (A = "horn" log line, X = lights) to exercise button hints
+├── deck_sim/test_camera.py      # moving test pattern on /camera/image_raw
+├── deck_sim/model.py            # ROS-free battery/odometry models (pytest)
+├── config/gateway_sim.yaml      # gateway status items, actions and hints matching the sim
 └── launch/sim.launch.py
 ```
 
@@ -187,7 +193,7 @@ teleop_twist_joy_node:
     scale_angular_turbo: {yaw: 2.0}
 ```
 
-Speeds are placeholders. Check the parameter names against Jazzy (open item O7). Launch args: `image_topic`, `video_container`, `cmd_vel_topic` (default `cmd_vel`), `cmd_vel_stamped` (default `true`), `use_video` (default `true`), `use_teleop` (default `true`).
+Speeds are placeholders. Check the parameter names against Jazzy (open item O7). Launch args: `image_topic`, `gateway_config` (default: the installed `config/gateway.yaml`), `video_container`, `cmd_vel_topic` (default `cmd_vel`), `cmd_vel_stamped` (default `true`), `use_video` (default `true`), `use_teleop` (default `true`).
 
 **Drive base (not chosen yet, open item O13).** `cmd_vel_stamped` sets `teleop_twist_joy`'s `publish_stamped_twist`:
 - `true` for ros2_control `diff_drive_controller` (`TwistStamped`);
@@ -198,10 +204,12 @@ Either way the base must zero velocity on stale commands (e.g. `cmd_vel_timeout`
 ## Simulation
 
 `ros2 launch deck_sim sim.launch.py` runs the full robot side with nothing physical attached:
-- the router, `deck_gateway`, `deck_video` and `teleop_twist_joy`;
+- the router, `deck_gateway`, `deck_video` and `teleop_twist_joy`, by including `deck_gateway`'s `robot.launch.py` with `gateway_config:=deck_sim/config/gateway_sim.yaml`;
 - **turtlesim** as the "base" (`cmd_vel_topic:=/turtle1/cmd_vel`, `cmd_vel_stamped:=false`, which also exercises the plain-`Twist` path);
-- **`image_publisher`** looping a test video or image as the camera;
-- **`fake_robot`**: a battery that slowly drains (so status levels change), odometry, `/diagnostics`, and `std_srvs/Trigger` `/dock` (`moves_robot`) plus `SetBool` `/lights` services, so actions can be tested.
+- **`test_camera`**: a moving test pattern (frame counter, timestamp, a bar sweeping once per second, colour bars) at 640×480 and 30 fps, so dropped frames and latency are visible on the Deck. It replaces `image_publisher`, which isn't installed by default;
+- **`fake_robot`**: a battery that slowly drains (faster while moving, charges when docked), odometry, `/diagnostics`, `/lights_on`, and `std_srvs/Trigger` `/dock` (`moves_robot`; teleports the turtle home) plus `SetBool` `/lights` services, so actions can be tested. On `/joy`, A logs a horn and X toggles the lights.
+
+Launch arguments: `turtlesim` (default `true`; needs a display), `camera` (default `true`), `camera_fps`, and `gateway` (`auto` | `true` | `false`). With `auto`, the robot side is included only if `deck_gateway` is built. Otherwise the sim starts `teleop_twist_joy` itself, so anything publishing `/joy` drives the turtle.
 
 A real Deck (or a laptop running `deck_app`) connects to it like a real robot, so M1–M4 can be built before the robot is ready. CI uses the same launch file headless for the `launch_testing` suites. Swap turtlesim for a Gazebo model when you need physics or a simulated camera.
 

@@ -1,0 +1,17 @@
+# Steam Deck app (no ROS). See docs/controller.md.
+[workspace]
+resolver = "2"
+members = ["deck_msgs"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "TODO"
+
+[workspace.dependencies]
+prost = "0.14"
+prost-build = "0.14"
+protox = "0.10"
+
+[profile.release]
+strip = true

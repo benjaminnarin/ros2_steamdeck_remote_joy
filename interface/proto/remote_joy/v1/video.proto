@@ -1,0 +1,18 @@
+// Deck <-> robot interface v1: camera.
+syntax = "proto3";
+package remote_joy.v1;
+
+// rj/v1/video: robot -> Deck, best effort, <= 30 fps, only while a Deck subscribes.
+message VideoFrame {
+  enum Codec {
+    CODEC_UNSPECIFIED = 0;
+    JPEG = 1;
+  }
+  uint32 frame_id              = 1;
+  uint64 capture_time_us       = 2;  // robot monotonic clock
+  uint32 encode_done_offset_us = 3;  // capture -> encode finished
+  uint32 width                 = 4;
+  uint32 height                = 5;
+  Codec  codec                 = 6;
+  bytes  data                  = 7;  // one complete JPEG
+}

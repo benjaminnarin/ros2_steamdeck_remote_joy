@@ -6,3 +6,9 @@
 *.p12
 *.pfx
 *.crt
+
+# colcon workspace output (built from the repo root)
+build/
+install/
+log/
+__pycache__/

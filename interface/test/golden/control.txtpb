@@ -1,0 +1,8 @@
+# message: remote_joy.v1.Control
+# LB + RB held, left stick half left, full forward.
+session_id: 0xdec0ffee
+seq: 42
+deck_time_us: 123456789012
+axes: [0.5, 1.0, 0.0, -0.25, 0.0, 1.0]
+buttons: 0x600
+stop: false
