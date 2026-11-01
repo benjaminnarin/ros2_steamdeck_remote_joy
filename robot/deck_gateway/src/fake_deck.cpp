@@ -9,7 +9,7 @@
 //   drive [seconds=2] [ly=1.0] [rx=0.0]     neutral 0.3 s, clear_stop, L2 (left trigger) + sticks, release
 //   hold  [seconds=2] [buttons=HEX]         L2 held + that button mask (no clear) for a while
 //   stop                                    publish rj/v1/stop
-//   clear                                   neutral 0.3 s, then clear_stop
+//   clear [ly=0] [lt=0]                     hold that stick/trigger 0.3 s, then clear_stop
 //   gap   [before=1] [silence_ms=500] [after=1]  drive, go silent, then drive again (REARM/link_lost)
 //   watch [seconds=2]                       print RobotState changes only
 // Default endpoint: the router's local TCP endpoint (no TLS), tcp/127.0.0.1:7451.
@@ -116,11 +116,12 @@ public:
     }
   }
 
-  bool clear() {
+  /// clear_stop while still holding `ly` / the deadman (to provoke refusals).
+  bool clear(float ly = 0, bool deadman = false) {
     v1::ClearStopRequest req;
     req.set_session_id(session_id_);
     req.set_released_seq(seq_ + 1);
-    send(0);  // the first seq with stop=false is <= released_seq
+    send(0, ly, 0, false, deadman ? 1.0f : 0.0f);  // the first seq with stop=false <= released_seq
     zenoh::Session::GetOptions opts;
     opts.payload = zenoh::Bytes(req.SerializeAsString());
     opts.timeout_ms = 2000;
@@ -286,8 +287,11 @@ int main(int argc, char ** argv) {
       deck.stop();
       std::this_thread::sleep_for(300ms);
     } else if (cmd == "clear") {
-      deck.stream(0.3, 0);
-      deck.clear();
+      // Optional stick / trigger while clearing, to provoke the refusals.
+      const auto ly = static_cast<float>(arg_or(args, 1, 0.0));
+      const bool deadman = arg_or(args, 2, 0.0) > 0.5;
+      deck.stream(0.3, 0, ly, 0, deadman);
+      deck.clear(ly, deadman);
       deck.stream(0.3, 0);
     } else if (cmd == "gap") {
       const double before = arg_or(args, 1, 1.0);

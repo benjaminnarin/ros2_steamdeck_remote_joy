@@ -57,6 +57,14 @@ if(BUILD_TESTING)
 
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_pair test/test_pair.py TIMEOUT 120)
+
+  # The real robot.launch.py driven by fake_deck. Own ports (in the test) and ROS domain, so it
+  # can run next to a live robot or deck_sim.
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/launch/test_gateway.launch.py
+    TARGET test_gateway_launch
+    TIMEOUT 240
+    ENV ROS_DOMAIN_ID=73 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST)
 endif()
 
 ament_package()

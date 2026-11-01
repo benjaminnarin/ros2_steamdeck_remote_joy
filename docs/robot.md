@@ -247,6 +247,12 @@ A real Deck (or a laptop running `deck_app`) connects to it like a real robot, s
 
 ## Testing
 
-- `deck_gateway_core` (gtest, fake clock): ownership, watchdog timing, stop latch set/clear rules (including new-owner latch, REARM vs `link_lost` around `resume_grace_ms`, immediate release on liveliness loss, owner-only and `moves_robot` action gating), Control → Joy mapping, the clear-stop `released_seq` rule, status levels and staleness.
-- `launch_testing` on top of `sim.launch.py`: a fake Deck (zenoh-cpp test client) → assert the `/joy` output, neutral on timeout, REARM, `clear_stop` refusals, an action round trip and its gating, and the `/diagnostics` contents.
-- `deck_video`: encode sizes and fps limit on a test image stream, and on-demand subscribe/unsubscribe.
+`colcon test --packages-select deck_gateway` runs everything below (about 40 s):
+
+| Suite | What |
+|---|---|
+| `test_core` (gtest, 31) | `deck_gateway_core` with a fake clock: ownership, watchdog, REARM vs `link_lost` around `resume_grace_ms`, immediate release on token loss, stop latch (including the new-owner latch and reason, the `released_seq` race), `clear_stop` refusals, late-control guard, action gating, Control → Joy, and the trigger deadman (hysteresis, button 21, RB only with the deadman) |
+| `test_pair` (pytest, 12) | certificate chains and EKUs, SANs, file modes, bundle contents, unique CNs, allow list after pairing and revoking, `--reissue-server` keeps the CA |
+| `test_gateway_launch` (launch_testing, 11) | the real `robot.launch.py` (`deck_router`, `gateway_node`, `teleop_twist_joy`) driven by `fake_deck`: neutral `/joy` at 50 Hz with 22 buttons at startup, latched topics, `Info` name and `robot_id`, drive → `/joy` and `cmd_vel` then zero on release, REARM after 500 ms, `link_lost` after 1500 ms, `clear_stop` refusals, BUSY, STOP from another Deck, the `set_stop` service, `/diagnostics`, clean exit codes. It pairs into a temp dir and uses ports 17450/17451 and `ROS_DOMAIN_ID=73`, so it can run next to a live robot. |
+
+Still to add: `deck_video` (encode sizes, fps limit, on-demand subscribe) with M2, and status, actions and hints with M3/M4.

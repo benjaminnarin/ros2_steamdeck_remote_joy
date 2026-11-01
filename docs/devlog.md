@@ -358,6 +358,13 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
   - Re-pairing gives a new CN that works while the old one stays locked out.
   - `Info.robot_id` matches the bundle's `id`.
 
+### 3.9 `deck_gateway` step 4: launch tests
+
+- **`test_gateway_launch`** (launch_testing): launches the real `robot.launch.py` and drives it with `fake_deck`. 11 checks: startup latched and neutral at 50 Hz, `Info` (name and `robot_id`), drive through to `cmd_vel`, REARM, `link_lost`, `clear_stop` refusals, BUSY, STOP from another Deck, `set_stop`, `/diagnostics`, exit codes.
+  - It's self-contained: it pairs into a temp dir, moves the router to 17450/17451, and runs in its own ROS domain. It ran alongside the live sim on the default ports.
+- **First run:** 10/11. The failure was in `fake_deck`: its `clear` sent a neutral control just before the request, so a refusal could never be provoked. It now repeats the held input.
+- **Then 4 clean runs in a row** (about 33 s each). The package now has 54 tests (31 gtest, 12 pytest, 11 launch).
+
 ---
 
 ## How to keep this log
