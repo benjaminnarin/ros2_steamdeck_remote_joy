@@ -333,6 +333,31 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
   - In the sim: `/joy` has 22 buttons and teleop logged "enable button 21".
   - On the Deck: cleared, then drove with L2. The turtle went from (6.30, 5.54) to (3.99, 6.91).
 
+### 3.8 `deck_gateway` step 3: `pair`
+
+- **`pair`** (Python, using `python3-cryptography` rather than the `openssl` command):
+  - the robot CA (EC P-256, 10 years) and a server certificate for the `--host` values plus `127.0.0.1`/`localhost`;
+  - per-Deck client certificates with CN `<deck>-<6 hex>`;
+  - a 0600 bundle (`ca.pem`, `client.pem`, `client.key`, `robot.toml` with the robot ID and endpoints);
+  - a generated `router.json5` with the allow list, checked with `deck_router --check`;
+  - `--list`, `--revoke`, `--reissue-server` (same CA), `--no-restart`.
+  - Keys are written 0600 from the start, with no window where they're readable.
+- **`robot.launch.py`:**
+  - reads `pair`'s state from `config_dir` (TLS files, generated router config, robot name);
+  - passes `robot_id` (SHA-256 of the CA's DER) to the gateway, which returns it in `Info`.
+- **Tests:** 12 pytest cases in temporary directories:
+  - certificate chains and EKUs, SANs, file modes, bundle contents, and that the key matches the certificate;
+  - CNs never reused, the allow list after pairing and revoking, the empty-list placeholder;
+  - a new host needs `--reissue-server` and keeps the CA;
+  - bad names rejected, the robot name fixed after the first run, `--list`.
+  - One test bug: argparse reads `--deck -deck` as two options, so the test now uses `--deck=-deck`.
+- **On the Deck, with a scratch `--dir`:**
+  - With a paired bundle, the Deck connects (6.4 ms round trip) and shows STOPPED `new_owner`.
+  - The old spike certificates (another CA) can't connect at all.
+  - After `--revoke`, the router restarts and the revoked certificate passes TLS but is blocked by access control (DOWN, no `RobotState`).
+  - Re-pairing gives a new CN that works while the old one stays locked out.
+  - `Info.robot_id` matches the bundle's `id`.
+
 ---
 
 ## How to keep this log

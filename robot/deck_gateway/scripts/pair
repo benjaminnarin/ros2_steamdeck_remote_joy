@@ -1,0 +1,401 @@
+#!/usr/bin/env python3
+"""pair: certificates and the router allow list for Steam Deck remote joy (file pairing method).
+
+    ros2 run deck_gateway pair --deck deck1 --host 192.168.1.50 [--host mybot.lan]
+    ros2 run deck_gateway pair --list
+    ros2 run deck_gateway pair --revoke deck1
+
+State lives in --dir (default ~/.config/deck_gateway):
+    tls/ca.pem, tls/ca.key        robot CA (first run)
+    tls/robot.pem, tls/robot.key  router server certificate for the --host names/addresses
+    pairing.json                  robot name, hosts, every Deck certificate issued (and revoked)
+    router.json5                  the router config with the allow list of paired CNs
+
+Each pairing issues a client certificate with a unique CN <deck>-<6 hex> and writes
+<deck>.bundle.tar (ca.pem, client.pem, client.key, robot.toml) for the Deck. CNs are never
+reused, so re-pairing a Deck locks its old certificate out. The CA isn't checked for
+revocation: the allow list is the revocation mechanism (docs/interface.md § Security).
+
+After a change the router is restarted (robot.launch.py respawns it) so it loads the new allow
+list. Connected Decks drop for about a second, and a robot being driven stops.
+"""
+
+import argparse
+import datetime as dt
+import hashlib
+import ipaddress
+import io
+import json
+import os
+import re
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import tarfile
+from pathlib import Path
+
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+DEFAULT_DIR = Path('~/.config/deck_gateway').expanduser()
+PORT = 7450
+NAME_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,31}$')
+# Zenoh rejects an empty cert_common_names list, so with no paired Decks the allow list holds a
+# name pair never issues (issued CNs always end in -<6 hex>).
+NO_DECKS_CN = 'no-paired-decks'
+DECKS_SUBJECT_RE = re.compile(r'(\{\s*id:\s*"decks"[^}]*?cert_common_names:\s*)\[[^\]]*\]', re.S)
+CA_YEARS, SERVER_YEARS, CLIENT_YEARS = 10, 5, 5
+
+
+class PairError(Exception):
+    pass
+
+
+# ── files ─────────────────────────────────────────────────────
+
+def write_private(path: Path, data: bytes):
+    """Write with mode 0600 from the start (no window where a key is world-readable)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + '.tmp')
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'wb') as f:
+        f.write(data)
+    os.replace(tmp, path)
+
+
+def write_public(path: Path, data: bytes):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + '.tmp')
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def now():
+    return dt.datetime.now(dt.timezone.utc)
+
+
+# ── certificates ──────────────────────────────────────────────
+
+def new_key():
+    return ec.generate_private_key(ec.SECP256R1())
+
+
+def key_pem(key) -> bytes:
+    return key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                             serialization.NoEncryption())
+
+
+def cert_pem(cert) -> bytes:
+    return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def name(cn: str):
+    return x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+
+
+def make_ca(robot_name: str):
+    key = new_key()
+    t = now()
+    cert = (x509.CertificateBuilder()
+            .subject_name(name(f'{robot_name} deck CA'))
+            .issuer_name(name(f'{robot_name} deck CA'))
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(t - dt.timedelta(minutes=5))
+            .not_valid_after(t + dt.timedelta(days=365 * CA_YEARS))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+            .add_extension(x509.KeyUsage(digital_signature=False, content_commitment=False,
+                                         key_encipherment=False, data_encipherment=False,
+                                         key_agreement=False, key_cert_sign=True, crl_sign=True,
+                                         encipher_only=False, decipher_only=False), critical=True)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+                           critical=False)
+            .sign(key, hashes.SHA256()))
+    return key, cert
+
+
+def san_entries(hosts):
+    out = []
+    for h in hosts:
+        try:
+            out.append(x509.IPAddress(ipaddress.ip_address(h)))
+        except ValueError:
+            out.append(x509.DNSName(h))
+    return out
+
+
+def issue(ca_key, ca_cert, cn: str, years: int, server: bool, hosts=()):
+    key = new_key()
+    t = now()
+    b = (x509.CertificateBuilder()
+         .subject_name(name(cn))
+         .issuer_name(ca_cert.subject)
+         .public_key(key.public_key())
+         .serial_number(x509.random_serial_number())
+         .not_valid_before(t - dt.timedelta(minutes=5))
+         .not_valid_after(t + dt.timedelta(days=365 * years))
+         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+         .add_extension(x509.KeyUsage(digital_signature=True, content_commitment=False,
+                                      key_encipherment=False, data_encipherment=False,
+                                      key_agreement=False, key_cert_sign=False, crl_sign=False,
+                                      encipher_only=False, decipher_only=False), critical=True)
+         .add_extension(x509.ExtendedKeyUsage(
+             [ExtendedKeyUsageOID.SERVER_AUTH if server else ExtendedKeyUsageOID.CLIENT_AUTH]),
+             critical=False)
+         .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
+                        critical=False))
+    if server:
+        b = b.add_extension(x509.SubjectAlternativeName(san_entries(hosts)), critical=False)
+    return key, b.sign(ca_key, hashes.SHA256())
+
+
+def robot_id(ca_cert) -> str:
+    """SHA-256 of the CA certificate (DER), hex: Info.robot_id, checked by the Deck."""
+    return hashlib.sha256(ca_cert.public_bytes(serialization.Encoding.DER)).hexdigest()
+
+
+# ── state ─────────────────────────────────────────────────────
+
+class Store:
+    def __init__(self, root: Path):
+        self.root = root
+        self.tls = root / 'tls'
+        self.state_path = root / 'pairing.json'
+        self.router_path = root / 'router.json5'
+        self.state = (json.loads(self.state_path.read_text()) if self.state_path.exists()
+                      else {'robot_name': None, 'hosts': [], 'decks': []})
+
+    def save(self):
+        write_public(self.state_path, (json.dumps(self.state, indent=2) + '\n').encode())
+
+    def has_ca(self):
+        return (self.tls / 'ca.pem').exists() and (self.tls / 'ca.key').exists()
+
+    def load_ca(self):
+        key = serialization.load_pem_private_key((self.tls / 'ca.key').read_bytes(), None)
+        cert = x509.load_pem_x509_certificate((self.tls / 'ca.pem').read_bytes())
+        return key, cert
+
+    def server_hosts(self):
+        p = self.tls / 'robot.pem'
+        if not p.exists():
+            return []
+        cert = x509.load_pem_x509_certificate(p.read_bytes())
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+        return ([str(i) for i in san.get_values_for_type(x509.IPAddress)]
+                + san.get_values_for_type(x509.DNSName))
+
+    def active_cns(self):
+        return [d['cn'] for d in self.state['decks'] if not d.get('revoked')]
+
+
+def ensure_robot(store: Store, robot_name, hosts, reissue_server: bool):
+    """Create the CA on first use, and the server certificate for `hosts` (+ local names)."""
+    if store.state['robot_name'] is None:
+        store.state['robot_name'] = robot_name or socket.gethostname()
+    elif robot_name and robot_name != store.state['robot_name']:
+        raise PairError(f"this robot is already named {store.state['robot_name']!r} "
+                        f'(pairing.json); omit --robot-name or edit the file deliberately')
+    if not store.has_ca():
+        if (store.tls / 'robot.pem').exists():
+            raise PairError(f'{store.tls}: robot.pem exists without ca.key; refusing to replace it')
+        key, cert = make_ca(store.state['robot_name'])
+        write_private(store.tls / 'ca.key', key_pem(key))
+        write_public(store.tls / 'ca.pem', cert_pem(cert))
+        print(f'created robot CA in {store.tls} (robot id {robot_id(cert)[:16]}...)')
+    ca_key, ca_cert = store.load_ca()
+
+    wanted = list(dict.fromkeys(list(hosts) + ['127.0.0.1', 'localhost']))
+    have = store.server_hosts()
+    if not have or reissue_server:
+        all_hosts = list(dict.fromkeys(wanted + (have if reissue_server else [])))
+        key, cert = issue(ca_key, ca_cert, f"{store.state['robot_name']}-router", SERVER_YEARS,
+                          server=True, hosts=all_hosts)
+        write_private(store.tls / 'robot.key', key_pem(key))
+        write_public(store.tls / 'robot.pem', cert_pem(cert))
+        print(f"server certificate for: {', '.join(all_hosts)}")
+        have = all_hosts
+    missing = [h for h in wanted if h not in have]
+    if missing:
+        raise PairError(f"the server certificate doesn't cover {', '.join(missing)} "
+                        f"(it has {', '.join(have)}). Add --reissue-server to include them; "
+                        'Decks keep working, since they trust the CA, not the server certificate.')
+    store.state['hosts'] = [h for h in have if h not in ('127.0.0.1', 'localhost')]
+    return ca_key, ca_cert
+
+
+# ── router config ─────────────────────────────────────────────
+
+def render_router(template: str, cns) -> str:
+    allow = cns if cns else [NO_DECKS_CN]
+    listing = '[' + ', '.join(json.dumps(c) for c in allow) + ']'
+    out, n = DECKS_SUBJECT_RE.subn(lambda m: m.group(1) + listing, template)
+    if n != 1:
+        raise PairError('router template has no single {id: "decks", ... cert_common_names: [...]}'
+                        ' subject to fill in')
+    header = ('// GENERATED by `pair` from the installed router.json5: edit the template, not this.\n'
+              f"// Paired Deck certificates: {', '.join(cns) if cns else 'none'}\n")
+    return header + out
+
+
+def default_template() -> Path:
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        return Path(get_package_share_directory('deck_gateway')) / 'config' / 'router.json5'
+    except Exception:  # noqa: BLE001 - running from the source tree
+        return Path(__file__).resolve().parent.parent / 'config' / 'router.json5'
+
+
+def write_router(store: Store, template: Path, check: bool = True):
+    text = render_router(template.read_text(), store.active_cns())
+    write_public(store.router_path, text.encode())
+    checker = shutil.which('deck_router') or _ros_executable('deck_router', 'deck_router')
+    if check and checker:
+        r = subprocess.run([checker, '--check', str(store.router_path)], capture_output=True,
+                           text=True)
+        if r.returncode != 0:
+            raise PairError(f'generated {store.router_path} failed deck_router --check: '
+                            f'{r.stderr.strip() or r.stdout.strip()}')
+
+
+def _ros_executable(pkg, exe):
+    try:
+        from ament_index_python.packages import get_package_prefix
+        p = Path(get_package_prefix(pkg)) / 'lib' / pkg / exe
+        return str(p) if p.exists() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def restart_router(enabled: bool):
+    if not enabled:
+        print('router not restarted (--no-restart): restart it to apply the new allow list')
+        return
+    r = subprocess.run(['pkill', '-x', 'deck_router'], capture_output=True)
+    if r.returncode == 0:
+        print('router restarted to load the allow list (robot.launch.py respawns it; connected '
+              'Decks reconnect within ~1 s, and a robot being driven stops)')
+    else:
+        print('no running deck_router found; the new allow list applies when it starts')
+
+
+# ── commands ──────────────────────────────────────────────────
+
+def cmd_pair(store: Store, args):
+    if not NAME_RE.match(args.deck):
+        raise PairError(f'--deck {args.deck!r}: use 1-32 of a-z, 0-9 and -, starting with a letter '
+                        'or digit')
+    if not args.host and not store.server_hosts():
+        raise PairError('first pairing needs --host with the address the Deck will use '
+                        '(e.g. the robot\'s fixed IP)')
+    ca_key, ca_cert = ensure_robot(store, args.robot_name, args.host, args.reissue_server)
+    used = {d['cn'] for d in store.state['decks']}
+    cn = f'{args.deck}-{secrets.token_hex(3)}'
+    while cn in used:
+        cn = f'{args.deck}-{secrets.token_hex(3)}'
+    key, cert = issue(ca_key, ca_cert, cn, CLIENT_YEARS, server=False)
+
+    endpoints = [f'quic/{h}:{PORT}?mixed_rel=1' for h in (args.host or store.state['hosts'])]
+    rid = robot_id(ca_cert)
+    toml = (
+        '# Steam Deck remote joy robot profile, written by `pair`.\n'
+        '[robot]\n'
+        f"name = {json.dumps(store.state['robot_name'])}\n"
+        f'id = "{rid}"  # SHA-256 of ca.pem (DER); the Deck checks it against Info.robot_id\n'
+        f"endpoints = [{', '.join(json.dumps(e) for e in endpoints)}]\n"
+        '\n[deck]\n'
+        f'name = {json.dumps(args.deck)}\n'
+        f'cn = {json.dumps(cn)}\n'
+        f'issued = "{now().strftime("%Y-%m-%dT%H:%M:%SZ")}"\n')
+    out = Path(args.out).expanduser() if args.out else Path.home() / f'{args.deck}.bundle.tar'
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode='w') as tar:
+        for fname, data, mode in [('ca.pem', cert_pem(ca_cert), 0o644),
+                                  ('client.pem', cert_pem(cert), 0o644),
+                                  ('client.key', key_pem(key), 0o600),
+                                  ('robot.toml', toml.encode(), 0o644)]:
+            info = tarfile.TarInfo(fname)
+            info.size, info.mode, info.mtime = len(data), mode, int(now().timestamp())
+            tar.addfile(info, io.BytesIO(data))
+    write_private(out, buf.getvalue())
+
+    store.state['decks'].append({'name': args.deck, 'cn': cn, 'issued': now().isoformat(),
+                                 'revoked': None})
+    store.save()
+    write_router(store, Path(args.template) if args.template else default_template(),
+                 check=not args.no_check)
+    print(f'paired {args.deck}: certificate {cn}')
+    print(f'bundle: {out}  (contains a private key: copy it to the Deck, then delete it)')
+    restart_router(not args.no_restart)
+
+
+def cmd_list(store: Store, _args):
+    if store.state['robot_name'] is None:
+        print(f'not set up yet ({store.root}): run pair --deck <name> --host <address>')
+        return
+    ca = store.load_ca()[1] if store.has_ca() else None
+    print(f"robot {store.state['robot_name']}  id {robot_id(ca) if ca else '-'}")
+    print(f"hosts {', '.join(store.state['hosts']) or '-'}   router config {store.router_path}")
+    if not store.state['decks']:
+        print('no Decks paired')
+    for d in store.state['decks']:
+        status = f"revoked {d['revoked'][:10]}" if d.get('revoked') else 'active'
+        print(f"  {d['name']:<16} {d['cn']:<24} issued {d['issued'][:10]}  {status}")
+
+
+def cmd_revoke(store: Store, args):
+    hits = [d for d in store.state['decks'] if d['name'] == args.revoke and not d.get('revoked')]
+    if not hits:
+        raise PairError(f'no active certificates for Deck {args.revoke!r} (see --list)')
+    for d in hits:
+        d['revoked'] = now().isoformat()
+    store.save()
+    write_router(store, Path(args.template) if args.template else default_template(),
+                 check=not args.no_check)
+    print(f"revoked {args.revoke}: {', '.join(d['cn'] for d in hits)}")
+    restart_router(not args.no_restart)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__.split('\n\n')[0],
+                                formatter_class=argparse.RawDescriptionHelpFormatter,
+                                epilog=__doc__.split('\n\n', 1)[1])
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument('--deck', help='pair a Deck with this name (e.g. deck1)')
+    g.add_argument('--list', action='store_true', help='list paired Decks')
+    g.add_argument('--revoke', metavar='DECK', help='revoke every certificate of this Deck')
+    p.add_argument('--host', action='append', default=[],
+                   help='robot address/name the Deck uses (repeatable; needed on first pairing)')
+    p.add_argument('--robot-name', help='robot name (first run; default: hostname)')
+    p.add_argument('--reissue-server', action='store_true',
+                   help='reissue the server certificate to add --host values (same CA)')
+    p.add_argument('--out', help='bundle path (default ~/<deck>.bundle.tar)')
+    p.add_argument('--dir', default=str(DEFAULT_DIR), help=f'state directory (default {DEFAULT_DIR})')
+    p.add_argument('--template', help='router.json5 template (default: the installed one)')
+    p.add_argument('--no-restart', action='store_true', help="don't restart deck_router")
+    p.add_argument('--no-check', action='store_true', help="don't run deck_router --check")
+    # launch_ros-style trailing args, if run as a node
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if '--ros-args' in argv:
+        argv = argv[:argv.index('--ros-args')]
+    args = p.parse_args(argv)
+    store = Store(Path(args.dir).expanduser())
+    try:
+        if args.list:
+            cmd_list(store, args)
+        elif args.revoke:
+            cmd_revoke(store, args)
+        else:
+            cmd_pair(store, args)
+    except PairError as e:
+        print(f'pair: {e}', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

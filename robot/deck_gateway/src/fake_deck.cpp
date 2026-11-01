@@ -159,9 +159,16 @@ public:
       const auto v = reply.get_ok().get_payload().as_vector();
       if (m.ParseFromArray(v.data(), static_cast<int>(v.size()))) {
         got = true;
-        std::printf("INFO robot_name=%s interface=%u.%u camera=%d actions=%d hints=%d\n",
+        std::string id;
+        for (unsigned char ch : m.robot_id()) {
+          char b[3];
+          std::snprintf(b, sizeof(b), "%02x", ch);
+          id += b;
+        }
+        std::printf("INFO robot_name=%s interface=%u.%u camera=%d actions=%d hints=%d robot_id=%s\n",
           m.robot_name().c_str(), m.interface_version(), m.interface_minor(),
-          m.camera().available() ? 1 : 0, m.actions_size(), m.button_hints_size());
+          m.camera().available() ? 1 : 0, m.actions_size(), m.button_hints_size(),
+          id.empty() ? "-" : id.c_str());
       }
     }
     if (!got) {

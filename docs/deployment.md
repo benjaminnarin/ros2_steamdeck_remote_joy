@@ -60,12 +60,19 @@ When the main repo catches up, normal upgrades take over: it's the same version,
 ### Pair each Deck
 
 ```bash
-ros2 run deck_gateway pair --deck deck1 --host 192.168.1.50
-# first run: creates the robot CA + server cert (names/addresses from --host) in ~/.config/deck_gateway/tls/
-# every run: issues a client cert with a unique CN (e.g. deck1-3fa9c2), adds it to the router ACL → ~/deck1.bundle.tar
+ros2 run deck_gateway pair --deck deck1 --host 192.168.1.50 [--robot-name mybot]
+# first run: creates the robot CA + server cert (for --host, plus 127.0.0.1/localhost) in ~/.config/deck_gateway/tls/
+# every run: issues a client cert with a unique CN (e.g. deck1-3fa9c2), regenerates
+#            ~/.config/deck_gateway/router.json5 with the allow list → ~/deck1.bundle.tar (mode 0600)
 ros2 run deck_gateway pair --list
-ros2 run deck_gateway pair --revoke deck1      # removes its CN from the ACL, reloads the router (connected Decks drop)
+ros2 run deck_gateway pair --revoke deck1      # removes all of deck1's CNs from the allow list
 ```
+
+- **State** lives in `~/.config/deck_gateway/` (`--dir` to change it): `tls/` (CA and server keys, mode 0600), `pairing.json` (robot name, hosts, every certificate issued, revoked ones marked), and the generated `router.json5`. `robot.launch.py` reads it from there by default (`config_dir:=`). **Back this directory up:** losing `tls/ca.key` means re-pairing every Deck.
+- **Applying changes:** pairing and revoking restart `deck_router` (`pkill -x deck_router`; the launch file respawns it with the new allow list). Connected Decks reconnect within about a second, and a robot being driven stops. Use `--no-restart` to apply later.
+- **New addresses:** a `--host` the server certificate doesn't cover is an error. Add `--reissue-server` to issue a new server certificate with the same CA, so paired Decks keep working.
+- **Re-pairing** a Deck issues a new CN. Its old certificate stays allowed until `--revoke`, which removes all of that Deck's CNs.
+- **The bundle** holds `ca.pem`, `client.pem`, `client.key` and `robot.toml` (robot name, robot ID = SHA-256 of the CA, QUIC endpoints, the Deck's CN). Copy it to the Deck, then delete it on the robot.
 
 Use the robot's stable name and/or address on the shared network ([§ Network setup](#network-setup)). Add a `--host` for anything else the Deck might use, such as a bench Ethernet address.
 

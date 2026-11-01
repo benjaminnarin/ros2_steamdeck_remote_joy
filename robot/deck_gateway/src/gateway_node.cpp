@@ -101,6 +101,8 @@ public:
     diagnostics_(this)
   {
     robot_name_ = declare_parameter<std::string>("robot_name", "robot");
+    // SHA-256 of the robot CA (hex); robot.launch.py computes it from tls_dir/ca.pem.
+    robot_id_ = parse_hex(declare_parameter<std::string>("robot_id", ""));
     const auto endpoint = declare_parameter<std::string>("zenoh_endpoint", "tcp/127.0.0.1:7451");
     const double state_rate_hz = declare_parameter<double>("state_rate_hz", 5.0);
     state_every_ticks_ = std::max(1, static_cast<int>(std::lround(50.0 / state_rate_hz)));
@@ -132,6 +134,31 @@ public:
   }
 
 private:
+  std::string parse_hex(const std::string & hex_id) {
+    std::string out;
+    auto nibble = [](char ch) -> int {
+      if (ch >= '0' && ch <= '9') return ch - '0';
+      if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+      if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+      return -1;
+    };
+    if (hex_id.size() % 2 != 0) {
+      throw std::invalid_argument("robot_id must be hex (SHA-256 of the robot CA)");
+    }
+    for (std::size_t i = 0; i < hex_id.size(); i += 2) {
+      const int hi = nibble(hex_id[i]);
+      const int lo = nibble(hex_id[i + 1]);
+      if (hi < 0 || lo < 0) {
+        throw std::invalid_argument("robot_id must be hex (SHA-256 of the robot CA)");
+      }
+      out.push_back(static_cast<char>((hi << 4) | lo));
+    }
+    if (out.empty()) {
+      RCLCPP_WARN(get_logger(), "robot_id not set: Decks can't confirm they reached this robot");
+    }
+    return out;
+  }
+
   core::Config load_config() {
     core::Config c;
     c.watchdog_us = declare_parameter<int>("watchdog_ms", 250) * 1000;
@@ -260,7 +287,7 @@ private:
     info.set_interface_version(v1::kInterfaceVersion);
     info.set_interface_minor(v1::kInterfaceMinor);
     info.mutable_camera()->set_available(false);  // deck_video (M2) will fill this in
-    // robot_id (SHA-256 of the robot CA) comes with the pair tool.
+    info.set_robot_id(robot_id_);
     zenoh::Query::ReplyOptions opts;
     opts.encoding = zenoh::Encoding(v1::encoding("Info"));
     q.reply(ke(keys::kInfo), serialize(info), std::move(opts));
@@ -358,6 +385,7 @@ private:
   std::mutex mutex_;
   core::SafetyCore core_;
   std::string robot_name_;
+  std::string robot_id_;  // raw bytes
   int state_every_ticks_ = 10;
   std::uint64_t ticks_ = 0;
   bool last_latched_ = true;

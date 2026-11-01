@@ -45,6 +45,7 @@ add_executable(fake_deck src/fake_deck.cpp)
 target_link_libraries(fake_deck remote_joy_interface::remote_joy_interface zenohcxx::zenohc)
 
 install(TARGETS gateway_node fake_deck DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/pair DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
@@ -53,6 +54,9 @@ if(BUILD_TESTING)
     test/core/test_safety_core.cpp
     test/core/test_joy_mapping.cpp)
   target_link_libraries(test_core deck_gateway_core)
+
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_pair test/test_pair.py TIMEOUT 120)
 endif()
 
 ament_package()

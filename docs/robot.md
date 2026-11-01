@@ -33,7 +33,7 @@ robot/deck_gateway/              # ament_cmake
 │   ├── router.json5             # Zenoh router: endpoints, TLS, ACL, payload limits
 │   └── teleop_twist_joy.yaml
 ├── launch/robot.launch.py
-├── scripts/pair                 # certificate tool (openssl), installed as `ros2 run deck_gateway pair`
+├── scripts/pair                 # certificate tool (Python, python3-cryptography): `ros2 run deck_gateway pair`
 └── test/
 
 robot/deck_router/               # ament_cmake wrapper around cargo: the Zenoh router (O17)
@@ -205,8 +205,9 @@ Speeds are placeholders. The parameter names were confirmed on Lyrical in the M0
 
 | Launch arg | Default | |
 |---|---|---|
-| `tls_dir` | `~/.config/deck_gateway/tls` | Router TLS files `ca.pem`, `robot.pem`, `robot.key` (from `pair`). The launch fails with a clear message if any is missing. |
-| `router_config` | installed `config/router.json5` | |
+| `config_dir` | `~/.config/deck_gateway` | `pair`'s state. The robot name comes from its `pairing.json`, and `robot_id` (SHA-256 of `tls/ca.pem`) is passed to the gateway for `Info`. |
+| `tls_dir` | `<config_dir>/tls` | Router TLS files `ca.pem`, `robot.pem`, `robot.key`. The launch fails with a clear message if any is missing. |
+| `router_config` | `<config_dir>/router.json5` if `pair` made one, else the installed template | |
 | `gateway_config` | installed `config/gateway.yaml` | |
 | `use_router` | `true` | `false` to use a router started elsewhere (local endpoint `tcp/127.0.0.1:7451`) |
 | `use_teleop`, `use_video` | `true` | |

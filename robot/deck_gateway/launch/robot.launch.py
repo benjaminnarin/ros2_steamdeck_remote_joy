@@ -1,11 +1,19 @@
 """Robot side of the Steam Deck link: router, gateway, teleop (and video, once deck_video exists).
 
-    ros2 launch deck_gateway robot.launch.py tls_dir:=<dir with ca.pem robot.pem robot.key>
+    ros2 run deck_gateway pair --deck deck1 --host <robot address>    # once per Deck
+    ros2 launch deck_gateway robot.launch.py
+
+By default everything comes from `pair`'s state in config_dir (~/.config/deck_gateway):
+tls/ (certificates), router.json5 (with the paired Decks' allow list) and pairing.json (robot
+name). Override with tls_dir:=, router_config:=.
 
 Spec: docs/robot.md § Launch. The router (deck_router) and the gateway are respawned if they
 exit; the gateway starts with STOP latched, so a respawn never resumes driving by itself.
 """
 
+import base64
+import hashlib
+import json
 import os
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
@@ -24,6 +32,25 @@ def _share(pkg):
         return None
 
 
+def _config_dir(context):
+    return os.path.expanduser(LaunchConfiguration('config_dir').perform(context))
+
+
+def _tls_dir(context):
+    tls = LaunchConfiguration('tls_dir').perform(context)
+    return os.path.expanduser(tls) if tls else os.path.join(_config_dir(context), 'tls')
+
+
+def _robot_id(tls_dir):
+    """SHA-256 of the CA certificate's DER, hex (what pair writes into each bundle)."""
+    try:
+        pem = open(os.path.join(tls_dir, 'ca.pem')).read()
+    except OSError:
+        return ''
+    body = pem.split('-----BEGIN CERTIFICATE-----')[1].split('-----END CERTIFICATE-----')[0]
+    return hashlib.sha256(base64.b64decode(''.join(body.split()))).hexdigest()
+
+
 def _bool(context, name):
     return LaunchConfiguration(name).perform(context).lower() in ('1', 'true', 'yes', 'on')
 
@@ -31,12 +58,18 @@ def _bool(context, name):
 def _router(context):
     if not _bool(context, 'use_router'):
         return [LogInfo(msg='deck_gateway: use_router:=false, expecting a router on the local endpoint')]
-    tls_dir = os.path.expanduser(LaunchConfiguration('tls_dir').perform(context))
+    tls_dir = _tls_dir(context)
     missing = [f for f in TLS_FILES if not os.path.isfile(os.path.join(tls_dir, f))]
     if missing:
         raise RuntimeError(
             f'tls_dir {tls_dir} is missing {", ".join(missing)}. '
-            'Create them with `ros2 run deck_gateway pair` (or point tls_dir at existing ones).')
+            'Create them with `ros2 run deck_gateway pair --deck <name> --host <address>` '
+            '(or point tls_dir at existing ones).')
+    router_config = LaunchConfiguration('router_config').perform(context)
+    if not router_config:
+        generated = os.path.join(_config_dir(context), 'router.json5')
+        router_config = generated if os.path.isfile(generated) else os.path.join(
+            get_package_share_directory('deck_gateway'), 'config', 'router.json5')
     override = ';'.join([
         f'transport/link/tls/root_ca_certificate="{os.path.join(tls_dir, "ca.pem")}"',
         f'transport/link/tls/listen_certificate="{os.path.join(tls_dir, "robot.pem")}"',
@@ -46,9 +79,23 @@ def _router(context):
         package='deck_router', executable='deck_router', name='deck_router', output='screen',
         respawn=True, respawn_delay=1.0,
         additional_env={
-            'ZENOH_ROUTER_CONFIG_URI': LaunchConfiguration('router_config').perform(context),
+            'ZENOH_ROUTER_CONFIG_URI': router_config,
             'ZENOH_CONFIG_OVERRIDE': override,
         })]
+
+
+def _gateway(context):
+    overrides = {'robot_id': _robot_id(_tls_dir(context))}
+    try:
+        with open(os.path.join(_config_dir(context), 'pairing.json')) as f:
+            name = json.load(f).get('robot_name')
+        if name:
+            overrides['robot_name'] = name
+    except (OSError, ValueError):
+        pass
+    return [Node(package='deck_gateway', executable='gateway_node', name='deck_gateway',
+                 output='screen', respawn=True, respawn_delay=1.0,
+                 parameters=[LaunchConfiguration('gateway_config').perform(context), overrides])]
 
 
 def _teleop(context):
@@ -73,10 +120,14 @@ def _video(context):
 def generate_launch_description():
     share = get_package_share_directory('deck_gateway')
     return LaunchDescription([
-        DeclareLaunchArgument('tls_dir', default_value='~/.config/deck_gateway/tls',
-                              description='Router TLS files: ca.pem, robot.pem, robot.key (from pair)'),
-        DeclareLaunchArgument('router_config',
-                              default_value=os.path.join(share, 'config', 'router.json5')),
+        DeclareLaunchArgument('config_dir', default_value='~/.config/deck_gateway',
+                              description="pair's state: tls/, router.json5, pairing.json"),
+        DeclareLaunchArgument('tls_dir', default_value='',
+                              description='Router TLS files ca.pem, robot.pem, robot.key '
+                                          '(default: <config_dir>/tls)'),
+        DeclareLaunchArgument('router_config', default_value='',
+                              description='default: <config_dir>/router.json5 if pair made one, '
+                                          'else the installed template'),
         DeclareLaunchArgument('gateway_config',
                               default_value=os.path.join(share, 'config', 'gateway.yaml')),
         DeclareLaunchArgument('use_router', default_value='true'),
@@ -89,9 +140,7 @@ def generate_launch_description():
                               description='TwistStamped (diff_drive_controller) or Twist'),
 
         OpaqueFunction(function=_router),
-        Node(package='deck_gateway', executable='gateway_node', name='deck_gateway',
-             output='screen', respawn=True, respawn_delay=1.0,
-             parameters=[LaunchConfiguration('gateway_config')]),
+        OpaqueFunction(function=_gateway),
         OpaqueFunction(function=_teleop),
         OpaqueFunction(function=_video),
     ])
