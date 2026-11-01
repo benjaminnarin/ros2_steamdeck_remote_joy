@@ -1,0 +1,146 @@
+// Zenoh router for the Deck interface, run as `deck_router` (robot/deck_router) with
+// ZENOH_ROUTER_CONFIG_URI=<this file>. rmw_zenohd reads the same file, but ROS's current
+// zenoh-c crashes under Wi-Fi load with mixed_rel=1 (quinn #2805, docs/devlog.md § 3.4). Spec: docs/interface.md (§ Connection, § Security)
+// and docs/robot.md (§ Zenoh router).
+//
+// TLS file paths are deployment-specific, so they aren't in this file. The launch file
+// passes them through ZENOH_CONFIG_OVERRIDE, e.g.
+//   transport/link/tls/root_ca_certificate="/path/ca.pem";transport/link/tls/listen_certificate="...";...
+//
+// Requires Zenoh 1.10.x (interface/ZENOH_VERSION). Older versions ignore mixed_rel=1
+// silently, and stalls then replay stale control and video. deck_router refuses a QUIC
+// endpoint without it.
+{
+  mode: "router",
+
+  listen: {
+    endpoints: [
+      // Decks: QUIC + mTLS. mixed_rel=1 puts best-effort keys on QUIC datagrams (M0, O3).
+      "quic/0.0.0.0:7450?mixed_rel=1",
+      // deck_gateway and deck_video only. Loopback, so not reachable from the network.
+      "tcp/127.0.0.1:7451",
+    ],
+  },
+  connect: { endpoints: [] },
+  scouting: {
+    multicast: { enabled: false },
+    gossip: { enabled: false },
+  },
+
+  transport: {
+    link: {
+      tx: {
+        lease: 2000,     // ms: notice a vanished Deck within ~2 s (O15)
+        keep_alive: 4,   // keep-alives per lease → every 500 ms
+      },
+      tls: {
+        enable_mtls: true,   // Decks must present a certificate signed by the robot CA
+        // root_ca_certificate, listen_certificate, listen_private_key: via ZENOH_CONFIG_OVERRIDE
+      },
+    },
+  },
+
+  // ── Access control ──────────────────────────────────────────────
+  // Default deny. Flows are from the router's point of view: "ingress" = from that
+  // transport into the router, "egress" = from the router out to that transport.
+  // Paired Decks are allowed by certificate CN. `pair` adds each CN to the "decks"
+  // subject's cert_common_names and restarts the router; `pair --revoke` removes it.
+  access_control: {
+    enabled: true,
+    default_permission: "deny",
+    rules: [
+      // Local processes (gateway, video) may do anything under rj/v1.
+      {
+        id: "local_all",
+        messages: ["put", "delete", "declare_subscriber", "query", "reply", "declare_queryable",
+                   "liveliness_token", "liveliness_query", "declare_liveliness_subscriber"],
+        flows: ["ingress", "egress"],
+        permission: "allow",
+        key_exprs: ["rj/v1/**"],
+      },
+      // Decks → robot: control and stop.
+      {
+        id: "deck_send",
+        messages: ["put"],
+        flows: ["ingress"],
+        permission: "allow",
+        key_exprs: ["rj/v1/control", "rj/v1/stop"],
+      },
+      // The router tells a Deck where subscribers/queryables are, so the Deck's publishers
+      // and queriers know they have somewhere to send.
+      {
+        id: "deck_routes",
+        messages: ["declare_subscriber", "declare_queryable"],
+        flows: ["egress"],
+        permission: "allow",
+        key_exprs: ["rj/v1/control", "rj/v1/stop", "rj/v1/info", "rj/v1/clear_stop", "rj/v1/action/*"],
+      },
+      // Decks query the robot's queryables and get replies.
+      {
+        id: "deck_query",
+        messages: ["query"],
+        flows: ["ingress"],
+        permission: "allow",
+        key_exprs: ["rj/v1/info", "rj/v1/clear_stop", "rj/v1/action/*"],
+      },
+      {
+        id: "deck_reply",
+        messages: ["reply"],
+        flows: ["egress"],
+        permission: "allow",
+        key_exprs: ["rj/v1/info", "rj/v1/clear_stop", "rj/v1/action/*"],
+      },
+      // Decks subscribe to robot data and receive it.
+      {
+        id: "deck_subscribe",
+        messages: ["declare_subscriber"],
+        flows: ["ingress"],
+        permission: "allow",
+        key_exprs: ["rj/v1/robot_state", "rj/v1/status", "rj/v1/video"],
+      },
+      {
+        id: "deck_receive",
+        messages: ["put"],
+        flows: ["egress"],
+        permission: "allow",
+        key_exprs: ["rj/v1/robot_state", "rj/v1/status", "rj/v1/video"],
+      },
+      // Each Deck declares its own liveliness token while running.
+      {
+        id: "deck_token",
+        messages: ["liveliness_token"],
+        flows: ["ingress"],
+        permission: "allow",
+        key_exprs: ["rj/v1/deck/*"],
+      },
+    ],
+    subjects: [
+      // The tcp endpoint is bound to 127.0.0.1, so only local processes match. (No
+      // `interfaces` match: Zenoh warns its ACL may misapply it when a transport spans
+      // several interfaces, and the loopback bind already guarantees locality.)
+      { id: "local", link_protocols: ["tcp"] },
+      // Placeholder CN for the M0/O17 test certificates; `pair` will manage this list.
+      { id: "decks", link_protocols: ["quic"], cert_common_names: ["deck1-spike"] },
+    ],
+    policies: [
+      { id: "local", rules: ["local_all"], subjects: ["local"] },
+      { id: "decks",
+        rules: ["deck_send", "deck_routes", "deck_query", "deck_reply", "deck_subscribe",
+                "deck_receive", "deck_token"],
+        subjects: ["decks"] },
+    ],
+  },
+
+  // ── Payload size limits on the Deck link (docs/interface.md § Limits) ──
+  low_pass_filter: [
+    { id: "deck_small", link_protocols: ["quic"], flows: ["ingress"], messages: ["put", "query"],
+      key_exprs: ["rj/v1/control", "rj/v1/stop", "rj/v1/info", "rj/v1/clear_stop", "rj/v1/action/*"],
+      size_limit: 1024 },
+    { id: "status", link_protocols: ["quic"], flows: ["egress"], messages: ["put"],
+      key_exprs: ["rj/v1/status"], size_limit: 65536 },
+    { id: "video", link_protocols: ["quic"], flows: ["egress"], messages: ["put"],
+      key_exprs: ["rj/v1/video"], size_limit: 524288 },
+  ],
+
+  adminspace: { enabled: false },
+}

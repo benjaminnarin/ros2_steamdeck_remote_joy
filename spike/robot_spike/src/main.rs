@@ -29,6 +29,13 @@ struct Args {
     no_tls: bool,
     #[arg(long, default_value_t = 2000)]
     lease_ms: u64,
+    /// Don't be the router: connect as a client to this local endpoint of a separate
+    /// router (e.g. rmw_zenohd: tcp/127.0.0.1:7451), like deck_gateway. Implies no TLS.
+    #[arg(long)]
+    local: Option<String>,
+    /// Use the product's rj/v1 key names (see common::Keys::v1).
+    #[arg(long)]
+    v1_keys: bool,
     /// Publish echo and video as reliable instead of best effort.
     #[arg(long)]
     reliable: bool,
@@ -63,19 +70,22 @@ struct ControlStats {
 fn main() -> Result<()> {
     let args = Args::parse();
     let clock = Arc::new(MonoClock::new());
-    let tls = if args.no_tls { None } else { Some(Tls::from_dir(&args.certs, "robot")?) };
-    let config = zenoh_config(&ConfigOpts {
-        role: Role::Robot,
-        endpoints: &args.listen,
-        tls: tls.as_ref(),
-        lease_ms: args.lease_ms,
-    })?;
+    let keys = Keys::new(args.v1_keys);
+    let (role, endpoints) = match &args.local {
+        Some(ep) => (Role::Local, vec![ep.clone()]),
+        None => (Role::Robot, args.listen.clone()),
+    };
+    let tls = if args.no_tls || args.local.is_some() { None } else { Some(Tls::from_dir(&args.certs, "robot")?) };
+    let config = zenoh_config(&ConfigOpts { role, endpoints: &endpoints, tls: tls.as_ref(), lease_ms: args.lease_ms })?;
     let reliability = if args.reliable { Reliability::Reliable } else { Reliability::BestEffort };
     let session = z(zenoh::open(config).wait())?;
-    println!("robot_spike: listening on {:?} (tls: {})", args.listen, tls.is_some());
+    match &args.local {
+        Some(ep) => println!("robot_spike: client of local router {ep}, keys {keys:?}"),
+        None => println!("robot_spike: listening on {:?} (tls: {}), keys {keys:?}", args.listen, tls.is_some()),
+    }
 
     let echo_pub = z(session
-        .declare_publisher(KEY_ECHO)
+        .declare_publisher(keys.echo)
         .congestion_control(CongestionControl::Drop)
         .priority(Priority::RealTime)
         .express(true)
@@ -87,7 +97,7 @@ fn main() -> Result<()> {
         let stats = stats.clone();
         let clock = clock.clone();
         z(session
-            .declare_subscriber(KEY_CONTROL)
+            .declare_subscriber(keys.control)
             .callback(move |sample| {
                 let Some(c) = Control::decode(&sample.payload().to_bytes()) else { return };
                 let echo = Echo { robot_us: clock.now_us(), seq: c.seq, deck_us: c.deck_us };
@@ -119,7 +129,7 @@ fn main() -> Result<()> {
 
     let _token_watch = z(session
         .liveliness()
-        .declare_subscriber(format!("{KEY_DECK_TOKEN}/**"))
+        .declare_subscriber(format!("{}/**", keys.deck_token))
         .callback(|sample| println!("  deck liveliness {:?}: {}", sample.kind(), sample.key_expr()))
         .wait())?;
 
@@ -127,7 +137,7 @@ fn main() -> Result<()> {
     let bytes_sent = Arc::new(AtomicU64::new(0));
     if args.fps > 0 {
         let video_pub = z(session
-            .declare_publisher(KEY_VIDEO)
+            .declare_publisher(keys.video)
             .congestion_control(CongestionControl::Drop)
             .priority(Priority::InteractiveLow)
             .reliability(reliability)

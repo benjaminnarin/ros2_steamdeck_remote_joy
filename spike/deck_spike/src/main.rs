@@ -61,6 +61,10 @@ struct Args {
     /// Window instead of fullscreen.
     #[arg(long)]
     windowed: bool,
+    /// Use the product's rj/v1 key names (see common::Keys::v1), e.g. against rmw_zenohd
+    /// with the product router.json5 (O17).
+    #[arg(long)]
+    v1_keys: bool,
 }
 
 /// What the control thread last read from the gamepads.
@@ -109,6 +113,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let clock = Arc::new(MonoClock::new());
     let shared = Arc::new(Shared::default());
+    let keys = Keys::new(args.v1_keys);
 
     let endpoints = if args.connect.is_empty() {
         if args.no_tls {
@@ -127,16 +132,16 @@ fn main() -> Result<()> {
         tls: tls.as_ref(),
         lease_ms: args.lease_ms,
     })?;
-    println!("deck_spike: connecting to {endpoints:?} (tls: {})", tls.is_some());
+    println!("deck_spike: connecting to {endpoints:?} (tls: {}), keys {keys:?}", tls.is_some());
     let session = z(zenoh::open(config).wait())?;
 
     let session_id = (clock.now_us() as u32) ^ std::process::id();
-    let _token = z(session.liveliness().declare_token(format!("{KEY_DECK_TOKEN}/{session_id:08x}")).wait())?;
+    let _token = z(session.liveliness().declare_token(format!("{}/{session_id:08x}", keys.deck_token)).wait())?;
 
     let _echo_sub = {
         let (shared, clock) = (shared.clone(), clock.clone());
         z(session
-            .declare_subscriber(KEY_ECHO)
+            .declare_subscriber(keys.echo)
             .callback(move |sample| {
                 if let Some(e) = Echo::decode(&sample.payload().to_bytes()) {
                     shared.link.lock().unwrap().on_echo(e, clock.now_us());
@@ -148,7 +153,7 @@ fn main() -> Result<()> {
     let _video_sub = {
         let (shared, clock) = (shared.clone(), clock.clone());
         z(session
-            .declare_subscriber(KEY_VIDEO)
+            .declare_subscriber(keys.video)
             .callback(move |sample| {
                 let bytes = sample.payload().to_bytes().into_owned();
                 if let Some((h, _)) = FrameHeader::decode(&bytes) {
@@ -164,7 +169,7 @@ fn main() -> Result<()> {
     spawn_decoder(shared.clone());
 
     let control_pub = z(session
-        .declare_publisher(KEY_CONTROL)
+        .declare_publisher(keys.control)
         .congestion_control(CongestionControl::Drop)
         .priority(Priority::RealTime)
         .express(true)

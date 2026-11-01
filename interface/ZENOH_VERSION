@@ -1,1 +1,9 @@
-1.10.1
+# Zenoh versions for the Deck <-> robot link (docs/interface.md § Versioning).
+# All components must be in the same release series: same wire protocol and config schema.
+series=1.10
+# crates.io Zenoh, built with our Cargo.lock: robot/deck_router (the network-facing router)
+# and the Deck app. Pinned exactly. Its Cargo.lock must also hold quinn-proto >= 0.11.18.
+crates=1.10.2
+# Minimum ROS-vendored zenoh-c (zenoh_cpp_vendor) for deck_gateway and deck_video. They only
+# use the router's local TCP endpoint, never QUIC.
+ros_min=1.10.1

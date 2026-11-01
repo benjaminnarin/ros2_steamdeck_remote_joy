@@ -96,7 +96,7 @@ fn key_strings() {
     assert_eq!(keys::action("dock"), "rj/v1/action/dock");
     assert_eq!(keys::deck_token(0xdec0ffee), "rj/v1/deck/dec0ffee");
     assert_eq!(keys::encoding("Control"), "application/protobuf;remote_joy.v1.Control");
-    assert_eq!(deck_msgs::ZENOH_VERSION, "1.10.1");
+    assert_eq!(deck_msgs::ZENOH_VERSION, "1.10.2");
 }
 
 /// The C++ header and this crate must list the same keys.

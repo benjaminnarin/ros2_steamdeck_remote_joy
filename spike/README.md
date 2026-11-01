@@ -44,6 +44,8 @@ Useful variants:
 - Extra Deck arguments for the Steam launch go in `~/rj-spike/args` (one line, read by `run.sh`).
 - `--no-tls` with `--connect udp/...` (the robot side then needs `--no-tls --listen udp/0.0.0.0:7450`): plain baseline.
 - `--lease-ms 10000`: Zenoh's default lease, to compare reconnect times (O15).
+- `--v1-keys` (both binaries): use the product key names (`rj/v1/control`, `rj/v1/robot_state` for the echo, `rj/v1/video`, `rj/v1/deck/<id>`), so the product router config and its access control apply. Payloads stay the spike's structs.
+- `robot_spike --local tcp/127.0.0.1:7451`: don't be the router; connect to a separate router's local endpoint like `deck_gateway` will. Used for O17 ([o17/README.md](o17/README.md)).
 
 ## End-to-end demo (turtlesim)
 

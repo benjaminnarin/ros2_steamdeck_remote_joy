@@ -67,6 +67,7 @@ Beyond these (H.264/WebRTC, FEC, multiple cameras, maps, Flatpak, ...): [docs/fu
 ├── controller/            # Cargo workspace (COLCON_IGNORE): deck_msgs ✅, deck_core, deck_app, packaging/
 ├── robot/
 │   ├── deck_gateway/      # C++: safety, status, actions, info. Router config, launch, pair tool.
+│   ├── deck_router/       # ✅ Rust: the Zenoh router (QUIC + mTLS, access control), see O17
 │   ├── deck_video/        # C++ composable node: Image → JPEG → Zenoh
 │   └── deck_sim/          # ✅ simulated robot for development and CI (turtlesim, test camera, fake status)
 ├── spike/                 # M0 spike and the turtlesim demo (throwaway)
@@ -77,7 +78,7 @@ Beyond these (H.264/WebRTC, FEC, multiple cameras, maps, Flatpak, ...): [docs/fu
 
 ```bash
 # Robot
-colcon build --packages-up-to deck_gateway deck_video && source install/setup.bash
+colcon build --packages-up-to deck_gateway deck_video deck_router && source install/setup.bash
 ros2 run deck_gateway pair --deck deck1 --host 192.168.1.50    # → deck1.bundle.tar
 ros2 launch deck_gateway robot.launch.py image_topic:=/camera/image_raw
 

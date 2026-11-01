@@ -16,7 +16,7 @@ scripts/setup_dev.sh --check   # report what's missing (no changes)
 scripts/setup_dev.sh           # install it: colcon/rosdep, every package.xml dependency, Rust via rustup
 ```
 
-The script lists no packages itself. ROS and system dependencies come from the `package.xml` files (rosdep keys), Rust crates from `controller/Cargo.toml`/`Cargo.lock`, and the Rust version from `controller/rust-toolchain.toml`. **Every new dependency goes into one of those files**, never only into a manual install, so a fresh machine (or CI) gets the same setup. Rust is installed user-level in `~/.cargo`, with no sudo. The Deck build compiles `.proto` files with protox, so it doesn't need `protoc`.
+The script lists no packages itself. ROS and system dependencies come from the `package.xml` files (rosdep keys), Rust crates from `controller/Cargo.toml`/`Cargo.lock`, and the Rust version from `rust-toolchain.toml` (repo root). **Every new dependency goes into one of those files**, never only into a manual install, so a fresh machine (or CI) gets the same setup. Rust is installed user-level in `~/.cargo`, with no sudo. The Deck build compiles `.proto` files with protox, so it doesn't need `protoc`.
 
 ## Robot (x86, Ubuntu 24.04 + ROS 2 Jazzy, or Ubuntu 26.04 + ROS 2 Lyrical)
 
@@ -28,7 +28,9 @@ sudo apt install python3-colcon-common-extensions python3-rosdep
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
 git clone --branch vX.Y.Z <repo-url> ros2_steamdeck_remote_joy
 cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y   # everything else, from package.xml
-colcon build --packages-up-to deck_gateway deck_video
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+#   Rust for deck_router, user-level; the repo's rust-toolchain.toml picks the version
+colcon build --packages-up-to deck_gateway deck_video deck_router
 source install/setup.bash
 ```
 
@@ -36,14 +38,14 @@ source install/setup.bash
 
 ### Zenoh package version
 
-`deck_gateway` and the router need `zenoh_cpp_vendor` / `rmw_zenoh_cpp` built from **Zenoh 1.10.1** (`interface/ZENOH_VERSION`): **Jazzy ≥ 0.2.12, Lyrical ≥ 0.10.7**. Older binaries lack `mixed_rel=1`, and Zenoh ignores the unknown option silently, so control and video would replay stale data after Wi-Fi stalls. Check with:
+`deck_gateway` and `deck_video` need `zenoh_cpp_vendor` built from **Zenoh 1.10.x** (`interface/ZENOH_VERSION`): **Jazzy ≥ 0.2.12, Lyrical ≥ 0.10.7**. (The router is `deck_router`, built from crates.io Zenoh; `rmw_zenoh_cpp` isn't needed for it, see [architecture.md](architecture.md) O17.) Older binaries lack `mixed_rel=1`, and Zenoh ignores the unknown option silently, so control and video would replay stale data after Wi-Fi stalls. Check with:
 
 ```bash
-grep 'define ZENOH_C "' /opt/ros/$ROS_DISTRO/opt/zenoh_cpp_vendor/include/zenoh_configure.h   # must say 1.10.1
+grep 'define ZENOH_C "' /opt/ros/$ROS_DISTRO/opt/zenoh_cpp_vendor/include/zenoh_configure.h   # must say 1.10.x (>= 1.10.1)
 scripts/setup_dev.sh --check                                                                   # also checks it
 ```
 
-**Lyrical, until 0.10.7 reaches the main repo:** install just these two packages from `ros2-testing`. An apt pin can't do this, because `ros2` and `ros2-testing` publish identical release metadata (same origin, label and suite), so apt can't tell them apart. Their dependencies are all in the main repo.
+**Lyrical, until 0.10.7 reaches the main repo:** install the 0.10.7 packages from `ros2-testing` (`rmw-zenoh-cpp` is only needed if ROS itself runs on `rmw_zenoh`). An apt pin can't do this, because `ros2` and `ros2-testing` publish identical release metadata (same origin, label and suite), so apt can't tell them apart. Their dependencies are all in the main repo.
 
 ```bash
 cd "$(mktemp -d)"
@@ -224,7 +226,7 @@ Do this with the drive wheels **off the ground** the first time, and after every
 ```bash
 # Robot
 cd ~/ros2_ws/src/ros2_steamdeck_remote_joy && git fetch && git checkout vX.Y.Z
-cd ~/ros2_ws && colcon build --packages-up-to deck_gateway deck_video && sudo systemctl restart deck-gateway
+cd ~/ros2_ws && colcon build --packages-up-to deck_gateway deck_video deck_router && sudo systemctl restart deck-gateway
 
 # Deck: build the tarball on the dev machine, then:
 tar xf ~/steamdeck-remote-joy-vX.Y.Z-x86_64.tar.gz -C ~ && ~/steamdeck-remote-joy/install.sh

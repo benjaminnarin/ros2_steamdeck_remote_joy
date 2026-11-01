@@ -8,10 +8,29 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 
-pub const KEY_CONTROL: &str = "rj/spike/control";
-pub const KEY_ECHO: &str = "rj/spike/echo";
-pub const KEY_VIDEO: &str = "rj/spike/video";
-pub const KEY_DECK_TOKEN: &str = "rj/spike/deck";
+/// Key names. `Keys::spike()` is the M0 set. `Keys::v1()` reuses the product's key names
+/// (docs/interface.md) so the product router config and its access control apply unchanged
+/// (O17). Payloads stay the spike's structs, so don't mix with a real gateway.
+#[derive(Clone, Copy, Debug)]
+pub struct Keys {
+    pub control: &'static str,
+    /// Echo of each control: `robot_state` in v1, which is what carries the echo there.
+    pub echo: &'static str,
+    pub video: &'static str,
+    pub deck_token: &'static str,
+}
+
+impl Keys {
+    pub const fn spike() -> Self {
+        Keys { control: "rj/spike/control", echo: "rj/spike/echo", video: "rj/spike/video", deck_token: "rj/spike/deck" }
+    }
+    pub const fn v1() -> Self {
+        Keys { control: "rj/v1/control", echo: "rj/v1/robot_state", video: "rj/v1/video", deck_token: "rj/v1/deck" }
+    }
+    pub const fn new(v1: bool) -> Self {
+        if v1 { Self::v1() } else { Self::spike() }
+    }
+}
 
 /// Zenoh errors are boxed trait objects; this turns them into anyhow errors.
 pub fn z<T>(r: zenoh::Result<T>) -> Result<T> {
@@ -181,6 +200,9 @@ pub enum Role {
     Robot,
     /// Connects only to the robot.
     Deck,
+    /// Connects to a separate router's local endpoint (e.g. rmw_zenohd on tcp/127.0.0.1:7451),
+    /// like deck_gateway will. No TLS.
+    Local,
 }
 
 pub struct ConfigOpts<'a> {
@@ -201,7 +223,7 @@ pub fn zenoh_config(o: &ConfigOpts) -> Result<zenoh::Config> {
             set(&mut c, "mode", "\"router\"".into())?;
             set(&mut c, "listen/endpoints", list)?;
         }
-        Role::Deck => {
+        Role::Deck | Role::Local => {
             set(&mut c, "mode", "\"client\"".into())?;
             set(&mut c, "connect/endpoints", list)?;
             // Default retry starts at 1 s and doubles to 4 s; reconnect faster.
@@ -227,7 +249,7 @@ pub fn zenoh_config(o: &ConfigOpts) -> Result<zenoh::Config> {
                 set(&mut c, "transport/link/tls/listen_certificate", p(&t.cert))?;
                 set(&mut c, "transport/link/tls/listen_private_key", p(&t.key))?;
             }
-            Role::Deck => {
+            Role::Deck | Role::Local => {
                 set(&mut c, "transport/link/tls/connect_certificate", p(&t.cert))?;
                 set(&mut c, "transport/link/tls/connect_private_key", p(&t.key))?;
             }
@@ -266,7 +288,7 @@ mod tests {
     #[test]
     fn config_builds() {
         let eps = vec!["quic/127.0.0.1:7450".to_string()];
-        for role in [Role::Robot, Role::Deck] {
+        for role in [Role::Robot, Role::Deck, Role::Local] {
             zenoh_config(&ConfigOpts { role, endpoints: &eps, tls: None, lease_ms: 2000 }).unwrap();
         }
     }

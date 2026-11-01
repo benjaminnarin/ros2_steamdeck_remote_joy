@@ -1,6 +1,0 @@
-# Rust version for the Deck app. rustup installs it automatically on the first cargo
-# command in controller/. Bump deliberately (and note it in docs/devlog.md).
-[toolchain]
-channel = "1.99.1"
-components = ["rustfmt", "clippy"]
-profile = "minimal"

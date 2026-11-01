@@ -11,7 +11,7 @@
 
 | Concern | Crate |
 |---------|-------|
-| Transport | `zenoh = "=1.10.1"` (matches `interface/ZENOH_VERSION` and ROS's vendored zenoh-c) with features `transport_quic`, `transport_tls`, `transport_quic_datagram` ([interface.md § Connection](interface.md#connection)) |
+| Transport | `zenoh = "=1.10.2"` (`crates=` in `interface/ZENOH_VERSION`; `Cargo.lock` must hold `quinn-proto` ≥ 0.11.18, checked by a test like `robot/deck_router/tests/pins.rs`) with features `transport_quic`, `transport_tls`, `transport_quic_datagram` ([interface.md § Connection](interface.md#connection)) |
 | Messages | `prost` (generated from `interface/proto` by `prost-build`) |
 | Window, GUI, touch | `eframe` / `egui` (glow backend) |
 | Gamepad | `gilrs` (Steam Input virtual gamepad, SDL mapping database) |

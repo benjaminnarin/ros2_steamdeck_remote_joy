@@ -22,8 +22,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let zenoh_version = manifest.join("../../interface/ZENOH_VERSION");
     println!("cargo:rerun-if-changed={}", zenoh_version.display());
-    let pin = std::fs::read_to_string(&zenoh_version)?;
-    println!("cargo:rustc-env=REMOTE_JOY_ZENOH_VERSION={}", pin.trim());
+    // key=value lines; the Deck app uses the crates.io pin (`crates=`).
+    let pins = std::fs::read_to_string(&zenoh_version)?;
+    let crates = pins
+        .lines()
+        .find_map(|l| l.strip_prefix("crates="))
+        .ok_or("interface/ZENOH_VERSION has no crates= line")?;
+    println!("cargo:rustc-env=REMOTE_JOY_ZENOH_VERSION={}", crates.trim());
 
     let fds = protox::compile(&files, [&proto_root])?;
     prost_build::Config::new().compile_fds(fds)?;

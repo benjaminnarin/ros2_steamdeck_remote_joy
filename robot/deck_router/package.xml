@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>deck_router</name>
+  <version>0.1.0</version>
+  <description>Zenoh router for the Steam Deck link (QUIC + mTLS, access control). Takes rmw_zenohd's role, built from crates.io Zenoh with a QUIC stack that has the datagram fix (quinn #2805).</description>
+  <maintainer email="bnninit@gmail.com">Benjamin Narin</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- Rust (cargo) comes from rustup, pinned by rust-toolchain.toml at the repo root, and is
+       installed by scripts/setup_dev.sh. Not a rosdep key: the apt cargo is too old and ignores
+       the toolchain pin. -->
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

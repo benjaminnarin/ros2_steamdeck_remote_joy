@@ -8,7 +8,7 @@
 # Dependencies are declared, not listed here:
 #   ROS/system packages  -> package.xml files under interface/ and robot/ (rosdep keys)
 #   Rust crates          -> controller/Cargo.toml + Cargo.lock
-#   Rust version         -> controller/rust-toolchain.toml
+#   Rust version         -> rust-toolchain.toml (repo root)
 # Add new dependencies there; this script picks them up.
 set -euo pipefail
 
@@ -89,26 +89,28 @@ if command -v rosdep >/dev/null; then
   fi
 fi
 
-# ── Zenoh version (the vendored zenoh-c must match interface/ZENOH_VERSION) ──
+# ── Zenoh version: ROS's vendored zenoh-c (gateway, video) must be in the pinned series ──
 step "Zenoh (zenoh_cpp_vendor)"
-want=$(head -1 "$repo/interface/ZENOH_VERSION")
+pin() { sed -n "s/^$1=//p" "$repo/interface/ZENOH_VERSION"; }
+series=$(pin series) ros_min=$(pin ros_min)
 hdr=/opt/ros/$distro/opt/zenoh_cpp_vendor/include/zenoh_configure.h
 if [[ -f $hdr ]]; then
   have=$(sed -n 's/^#define ZENOH_C "\(.*\)"/\1/p' "$hdr")
-  if [[ $have == "$want" ]]; then
-    ok "zenoh-c $have"
+  lowest=$(printf '%s\n%s\n' "$have" "$ros_min" | sort -V | head -1)
+  if [[ $have == "$series".* && $lowest == "$ros_min" ]]; then
+    ok "zenoh-c $have (series $series, >= $ros_min)"
   else
     # Not installable by rosdep alone: see docs/deployment.md § Zenoh package version.
-    need "zenoh-c $want (installed: $have; Lyrical needs zenoh_cpp_vendor >= 0.10.7, see docs/deployment.md § Zenoh package version)"
+    need "zenoh-c $series.x >= $ros_min (installed: $have; Lyrical needs zenoh_cpp_vendor >= 0.10.7, see docs/deployment.md § Zenoh package version)"
   fi
 else
-  echo "  (not installed yet: rosdep installs it once a package depends on zenoh_cpp_vendor; it must be zenoh-c $want)"
+  echo "  (not installed yet: rosdep installs it once a package depends on zenoh_cpp_vendor; it must be zenoh-c $series.x >= $ros_min)"
 fi
 
-# ── Rust (Deck app) ─────────────────────────────────────────
-step "Rust (controller/)"
+# ── Rust (Deck app and deck_router) ─────────────────────────────────────────
+step "Rust (controller/, robot/deck_router)"
 export PATH="$HOME/.cargo/bin:$PATH"
-pinned=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$repo/controller/rust-toolchain.toml")
+pinned=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$repo/rust-toolchain.toml")
 if ! command -v rustup >/dev/null; then
   if $check; then
     need "rustup (user-level, no sudo: https://rustup.rs)"
@@ -124,7 +126,7 @@ if command -v rustup >/dev/null; then
   elif $check; then
     need "Rust toolchain $pinned (rustup installs it on the first cargo command in controller/)"
   else
-    (cd "$repo/controller" && rustup toolchain install)  # reads rust-toolchain.toml
+    (cd "$repo" && rustup toolchain install)  # reads rust-toolchain.toml
     ok "Rust $pinned installed"
   fi
   grep -qs '.cargo/bin' ~/.profile ~/.bashrc ~/.zshrc 2>/dev/null ||

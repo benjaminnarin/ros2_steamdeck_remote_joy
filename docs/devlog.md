@@ -229,6 +229,54 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
   - New O17: `rmw_zenohd` has never been used as our router.
   - New O18: the Deck tarball can't be built in Docker without root, and relying on equal glibc versions is fragile.
 
+### 3.4 O17: `rmw_zenohd` as the router, and why it's `deck_router` instead
+
+- **Setup:**
+  - A draft product `router.json5`, with QUIC + mTLS + `mixed_rel=1`, a 2 s lease, default-deny access control by certificate CN, and per-key size limits. TLS paths come from `ZENOH_CONFIG_OVERRIDE`, which is how the launch file will pass them.
+  - The spike binaries got `--v1-keys` (product key names, so the product access rules apply unchanged) and `robot_spike --local` (a client of the router's TCP endpoint, like the gateway).
+  - `spike/o17/acl_test.py` plays the gateway and four Decks: paired, intruder (robot CA, unlisted CN), rogue (other CA, *same* CN) and no certificate.
+- **Access control and limits on `rmw_zenohd` (0.10.7, zenoh-c 1.10.1):** 28/28 checks passed:
+  - the rogue and no-certificate clients are refused at TLS;
+  - the intruder connects but can't put, subscribe, query or declare tokens;
+  - a paired Deck can't snoop control or spoof `robot_state`;
+  - size limits are exact (1024 B control passes, 1025 B is dropped; 512 KB video, 64 KB status);
+  - liveliness tokens appear and disappear as expected.
+
+  **Control run:** with access control and limits off, exactly the 12 deny checks fail, so the suite really measures them.
+- **On real Wi-Fi it failed.** Deck → `rmw_zenohd` → `robot_spike`:
+  - the round trip climbed from 5 ms to 2.6 s p95, with 459 stale echoes;
+  - then the router **aborted**: `quinn-proto-0.11.17 … datagrams.rs:47: datagrams.outgoing.payload_bytes desynchronized`.
+
+  This is [quinn #2805](https://github.com/quinn-rs/quinn/issues/2805): with `drop = true`, evicting an outgoing datagram subtracted its size twice. The accounting drifts, the queue grows, and eventually it pops an empty queue. Loopback never fills the buffer, which is why the local tests passed.
+- **Same conditions, the spike router** (crates.io Zenoh 1.10.1, `quinn-proto` 0.11.19), a minute later: round trip 4 / 6.7 / 8 ms, 0 stale. So the router build was the cause, not Wi-Fi.
+- **Scope of the problem:**
+  - Every current ROS zenoh-c lock (Jazzy, Lyrical, rolling) has `quinn-proto` 0.11.17; zenoh-c `main` has 0.11.19.
+  - crates.io Zenoh **1.10.2** (2026-10-28) also has QUIC fixes the ROS build lacks: a symmetric datagram MTU in mixed reliability, and an acceptor DoS fix.
+- **Decision: `deck_router`.**
+  - About 100 lines of Rust on Zenoh 1.10.2, the same `ZENOH_ROUTER_CONFIG_URI` / `ZENOH_CONFIG_OVERRIDE` interface as `rmw_zenohd`, built by colcon through `cargo --locked`.
+  - It refuses non-router modes and QUIC endpoints without `mixed_rel=1`.
+  - Tests pin `zenoh` to `interface/ZENOH_VERSION` and require `quinn-proto` ≥ 0.11.18.
+  - The gateway and video stay on ROS's zenoh-c, which is fine because they only use local TCP.
+  - `ZENOH_VERSION` became `series=1.10`, `crates=1.10.2`, `ros_min=1.10.1`, with an exported CMake check (it accepts 1.10.1 and 1.10.7, rejects 1.8.0 and 1.11.0).
+  - The Rust toolchain pin moved to the repo root.
+  - We go back to `rmw_zenohd` once ROS ships a fixed zenoh-c.
+- **`deck_router` results:**
+  - 28/28 checks (and the control run: 16/28).
+  - Python Zenoh 1.10.1 clients and the 1.10.1 spike interoperate with the 1.10.2 router.
+  - Deck over Wi-Fi for 2 min: round trip 4.5 / 7.1 / 10 ms, 0 lost, 0 stale, video 30 fps with 99.7–99.9% delivered and about 23 ms latency.
+  - Stalls:
+
+    | `stall.sh` | Seen by the Deck | After recovery |
+    |---|---|---|
+    | 1000 ms | 1323 ms | 1 stale echo at 251 ms (the M0 residual send queue; the late-control guard would drop it) |
+    | 1500 ms | 2020 ms | 0 stale |
+    | 3000 ms | 4209 ms | 0 stale; the lease expired and it reconnected, with the token re-declared. 209 controls during the gap were dropped (newest wins), no burst |
+- **Also:**
+  - Zenoh warns that interface-based ACL subjects may misapply on multi-interface transports, so the local subject matches only `tcp` (bound to loopback).
+  - `steamdeck` now resolves through Tailscale, whose SSH asks for a periodic re-check.
+  - A Deck test started over SSH died when the session closed, even with `nohup`/`setsid`. The first stall run measured nothing until it was rerun under `systemd-run --user`.
+- **Lesson:** a test that passes on loopback can still fail under real link conditions. Buffer-full paths only show up on a real, slower link.
+
 ---
 
 ## How to keep this log

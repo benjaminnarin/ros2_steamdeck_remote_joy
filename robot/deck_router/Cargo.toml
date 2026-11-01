@@ -1,0 +1,20 @@
+[package]
+name = "deck_router"
+description = "Zenoh router for the Steam Deck link: rmw_zenohd's role, built from crates.io Zenoh with a fixed QUIC stack"
+edition = "2021"
+version = "0.1.0"
+license = "TODO"
+publish = false
+
+# Its own workspace: built by colcon (CMakeLists.txt runs `cargo build --locked`), not part of controller/.
+[workspace]
+
+[dependencies]
+# Exact pin = `crates` in interface/ZENOH_VERSION (checked by tests/pins.rs). Default features
+# include QUIC, TLS, TCP and QUIC datagrams (needed for mixed_rel=1).
+zenoh = "=1.10.2"
+serde_json = "1"
+ctrlc = { version = "3", features = ["termination"] }
+
+[profile.release]
+strip = true

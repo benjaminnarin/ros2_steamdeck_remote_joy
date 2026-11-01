@@ -9,8 +9,10 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(Protobuf REQUIRED)
 
-file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/ZENOH_VERSION REMOTE_JOY_ZENOH_VERSION LIMIT_COUNT 1)
-message(STATUS "remote_joy_interface: Zenoh ${REMOTE_JOY_ZENOH_VERSION}")
+include(cmake/zenoh_versions.cmake)
+remote_joy_read_zenoh_versions(${CMAKE_CURRENT_SOURCE_DIR}/ZENOH_VERSION)
+message(STATUS "remote_joy_interface: Zenoh series ${REMOTE_JOY_ZENOH_SERIES} "
+  "(crates ${REMOTE_JOY_ZENOH_CRATES}, ROS zenoh-c >= ${REMOTE_JOY_ZENOH_ROS_MIN})")
 
 set(PROTO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/proto)
 file(GLOB PROTO_FILES CONFIGURE_DEPENDS ${PROTO_ROOT}/remote_joy/v1/*.proto)
@@ -39,6 +41,7 @@ install(TARGETS ${PROJECT_NAME} EXPORT export_${PROJECT_NAME}
 # The .proto files and the Zenoh pin are shared with the Deck's Rust build and other tools.
 install(DIRECTORY proto/ DESTINATION share/${PROJECT_NAME}/proto)
 install(FILES ZENOH_VERSION DESTINATION share/${PROJECT_NAME})
+install(FILES cmake/zenoh_versions.cmake DESTINATION share/${PROJECT_NAME}/cmake)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)

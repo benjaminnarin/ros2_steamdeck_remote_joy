@@ -1,10 +1,10 @@
 # Robot side
 
-ROS 2 Jazzy (Ubuntu 24.04) or Lyrical (Ubuntu 26.04, the initial test robot), x86. Needs `zenoh_cpp_vendor` **≥ 0.2.12 on Jazzy or ≥ 0.10.7 on Lyrical**, the first releases built from Zenoh 1.10.1 ([deployment.md § Zenoh package version](deployment.md#zenoh-package-version)). Three processes, started by one launch file:
+ROS 2 Jazzy (Ubuntu 24.04) or Lyrical (Ubuntu 26.04, the initial test robot), x86. `deck_gateway` and `deck_video` need `zenoh_cpp_vendor` **≥ 0.2.12 on Jazzy or ≥ 0.10.7 on Lyrical** (Zenoh 1.10.x, [deployment.md § Zenoh package version](deployment.md#zenoh-package-version)). The router is our own `deck_router`, which needs Rust to build. Three processes, started by one launch file:
 
 | Process | Package | Language |
 |---------|---------|----------|
-| Zenoh router | config in `deck_gateway` | `rmw_zenohd` (open item O17) |
+| Zenoh router | `deck_router` (config in `deck_gateway`) | Rust, crates.io Zenoh 1.10.2 (O17) |
 | `deck_gateway` | `deck_gateway` | C++ (rclcpp + zenoh-cpp) |
 | `deck_video` | `deck_video` | C++ composable node |
 
@@ -36,6 +36,11 @@ robot/deck_gateway/              # ament_cmake
 ├── scripts/pair                 # certificate tool (openssl), installed as `ros2 run deck_gateway pair`
 └── test/
 
+robot/deck_router/               # ament_cmake wrapper around cargo: the Zenoh router (O17)
+├── src/main.rs                  # load router.json5 + ZENOH_CONFIG_OVERRIDE, validate, run
+├── tests/pins.rs                # zenoh == interface/ZENOH_VERSION crates=, quinn-proto >= 0.11.18
+└── Cargo.lock                   # built with --locked
+
 robot/deck_video/                # ament_cmake, rclcpp_components
 └── src/video_publisher.cpp      # component deck_video::VideoPublisher
 
@@ -60,7 +65,9 @@ robot/deck_sim/                  # ament_python: development and CI without a re
 - Access control as in [interface.md § Security](interface.md#security). Payload size limits per key.
 - Multicast scouting off. It's a separate key space from any `rmw_zenoh` router the robot may run for ROS itself (that one uses 7447 by default).
 - Started by the launch file and respawned if it exits.
-- Binary: **`rmw_zenohd`** (from `ros-<distro>-rmw-zenoh-cpp`, same minimum versions as `zenoh_cpp_vendor`) started with `ZENOH_ROUTER_CONFIG_URI=<share>/config/router.json5`. It's a separate process and port from any `rmw_zenohd` the robot runs for ROS itself.
+- Binary: **`deck_router`** (`robot/deck_router`), started with `ZENOH_ROUTER_CONFIG_URI=<share>/config/router.json5` and the TLS file paths in `ZENOH_CONFIG_OVERRIDE` (`key=value;...`), the same interface as `rmw_zenohd`. It's a separate process and port from any `rmw_zenohd` the robot runs for ROS itself.
+  - **Why not `rmw_zenohd`:** it reads the same config, but every current ROS zenoh-c locks `quinn-proto` 0.11.17, which crashes the router under Wi-Fi load with `mixed_rel=1` (O17). `deck_router` is built from crates.io Zenoh 1.10.2 with `cargo --locked`, and a test fails the build if `quinn-proto` is older than 0.11.18. Switching back is a launch file change.
+  - It refuses to start in anything but router mode, or with a QUIC endpoint missing `mixed_rel=1`. `deck_router --check <file>` validates a config without starting.
 - `router.json5`: 2 s lease, `access_control` by `cert_common_names`, `low_pass_filter` size limits per key, and on the robot an optional `nftables` rule that marks outgoing UDP 7450 with DSCP (open item O4).
 
 ## `deck_gateway`

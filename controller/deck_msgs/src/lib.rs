@@ -16,8 +16,9 @@ pub use prost::Message;
 pub const INTERFACE_VERSION: u32 = 1;
 /// Additive revision within v1 (`Info.interface_minor`).
 pub const INTERFACE_MINOR: u32 = 0;
-/// Zenoh version pinned in `interface/ZENOH_VERSION`. Crates that depend on `zenoh`
-/// check their pin against this (see the `zenoh_pin` test in those crates).
+/// crates.io Zenoh version for the Deck app (`crates=` in `interface/ZENOH_VERSION`). Crates
+/// that depend on `zenoh` check their exact pin, and that their Cargo.lock has
+/// quinn-proto >= 0.11.18 (see robot/deck_router/tests/pins.rs).
 pub const ZENOH_VERSION: &str = env!("REMOTE_JOY_ZENOH_VERSION");
 
 /// Bit mask for a button index, e.g. `button_bit(v1::Button::Lb)`.

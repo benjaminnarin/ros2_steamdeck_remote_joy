@@ -1,5 +1,7 @@
 # Exported to packages that find_package(remote_joy_interface).
-# REMOTE_JOY_ZENOH_VERSION: the pinned Zenoh version, for downstream builds to check
-# against the zenoh-cpp/zenoh-c they link.
-file(STRINGS "${remote_joy_interface_DIR}/../ZENOH_VERSION" REMOTE_JOY_ZENOH_VERSION LIMIT_COUNT 1)
+#   REMOTE_JOY_ZENOH_SERIES / _CRATES / _ROS_MIN: the Zenoh pins from interface/ZENOH_VERSION
+#   remote_joy_check_ros_zenoh(<zenoh-c version>): fail unless ROS's zenoh-c is usable
+#   REMOTE_JOY_PROTO_DIR: the installed .proto files
+include("${remote_joy_interface_DIR}/zenoh_versions.cmake")
+remote_joy_read_zenoh_versions("${remote_joy_interface_DIR}/../ZENOH_VERSION")
 set(REMOTE_JOY_PROTO_DIR "${remote_joy_interface_DIR}/../proto")
