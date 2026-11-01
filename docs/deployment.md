@@ -172,7 +172,7 @@ Steam identifies a Non-Steam Game by its target path and name, and ties the cont
 ### Add to Steam
 
 1. If it wasn't added automatically: Steam → *Add a Non-Steam Game* → **Steam Deck Remote Joy**.
-2. *Controller Settings* → use the template from `steam_input/`. Or start from the **Gamepad** template and map **L4 → Left Bumper**.
+2. *Controller Settings* → use the template from `steam_input/`. Or use the default **Gamepad** template (L2 is the deadman). Optionally map a back grip (L4) to L2 as well.
 3. Go back to Game Mode and launch it. You should see the camera and a **STOPPED** banner.
 
 *To find out:* whether the Steam Input layout can be installed from a file. Until then, step 2 is manual.
@@ -198,9 +198,9 @@ Do this with the drive wheels **off the ground** the first time, and after every
 
 - [ ] `probe` shows the robot's name and actions. A Deck that isn't paired (or whose bundle has been revoked) can't connect.
 - [ ] The camera shows on the Deck, live.
-- [ ] After the gateway starts, the Deck shows STOPPED (`startup`). View+Menu (1 s) clears it only with sticks centered and LB released. Otherwise the Deck shows the reason it was refused.
-- [ ] Sticks without LB → no motion.
-- [ ] LB plus left stick forward → drives forward. Right stick right → turns right. If not, fix the signs in `teleop_twist_joy.yaml`.
+- [ ] After the gateway starts, the Deck shows STOPPED (`startup`). View+Menu (1 s) clears it only with sticks centered and L2 released. Otherwise the Deck shows the reason it was refused.
+- [ ] Sticks without L2 → no motion. LB or RB alone → no motion.
+- [ ] L2 plus left stick forward → drives forward. L2 + RB → turbo. Right stick right → turns right. If not, fix the signs in `teleop_twist_joy.yaml`.
 - [ ] Opening the panel (Menu) while driving → the robot stops (neutral input).
 - [ ] **Watchdog:** while driving, put the Deck in airplane mode → stops within about 0.25 s.
 - [ ] **Deck sleep:** press the power button while driving → stops. On wake, the app reconnects and the robot is STOPPED.
@@ -218,7 +218,7 @@ Do this with the drive wheels **off the ground** the first time, and after every
 - [ ] **Base limits:** with teleop scales temporarily set high, the robot still doesn't exceed the base's speed limit.
 - [ ] Each configured action works, and ones marked `confirm` ask first.
 - [ ] Button hints match what each free button actually does. Those buttons do nothing while STOPPED, REARM or with the panel open, and the hint line is dimmed then.
-- [ ] No robot node is bound to a reserved button (B, View, Menu, LB, RB). Check the gateway's startup warnings.
+- [ ] No robot node is bound to a reserved button (B, View, Menu, L2/LT, RB). Check the gateway's startup warnings.
 - [ ] The hardware E-stop works independently.
 
 ## Upgrade

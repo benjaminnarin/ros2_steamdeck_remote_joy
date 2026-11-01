@@ -76,14 +76,14 @@ trait PairingMethod {                              // MVP: FileBundle
 
 ## Controls
 
-Steam Input presents the Deck's controls as a standard gamepad, so the app is launched **through Steam** with a gamepad layout where **L4 → LB**. With no gamepad, the app shows "No controller — launch from Steam" and sends nothing.
+Steam Input presents the Deck's controls as a standard gamepad, so the app is launched **through Steam** with a gamepad layout (the default Gamepad template works: L2 is the deadman). With no gamepad, the app shows "No controller — launch from Steam" and sends nothing.
 
 | Input | Handled on | Effect |
 |-------|-----------|--------|
-| Sticks, LB, RB | Robot (in `Control`) | Driving via `teleop_twist_joy`: LB = deadman, RB = turbo, left stick ↕ = forward, right stick ↔ = turn |
-| A/X/Y, D-pad, L3/R3, triggers, right stick ↕ | Robot (in `Control`) | **Free buttons** for robot-side `/joy` listeners, labelled by the robot's button hints ([interface.md § Reserved and free buttons](interface.md#reserved-and-free-buttons)) |
+| Sticks, L2, RB | Robot (in `Control`) | Driving via `teleop_twist_joy`: L2 (left trigger) = deadman, RB = turbo (only with L2), left stick ↕ = forward, right stick ↔ = turn |
+| A/X/Y, LB, D-pad, L3/R3, R2, right stick ↕ | Robot (in `Control`) | **Free buttons** for robot-side `/joy` listeners, labelled by the robot's button hints ([interface.md § Reserved and free buttons](interface.md#reserved-and-free-buttons)) |
 | **B** / touchscreen **STOP** | Deck, **on every screen** | Sends `Stop` (reliable), latches locally, and sets `Control.stop` while latched |
-| **View + Menu** held 1 s, sticks centered, LB/RB released | Deck | Drops the local latch, sends `clear_stop` with `released_seq` ([interface.md § Rules](interface.md#rules)), and shows the result (e.g. "sticks not centered"). A refusal re-latches locally. |
+| **View + Menu** held 1 s, sticks centered, L2 released | Deck | Drops the local latch, sends `clear_stop` with `released_seq` ([interface.md § Rules](interface.md#rules)), and shows the result (e.g. "sticks not centered"). A refusal re-latches locally. |
 | **Menu** tap (released without View) | Deck | Opens or closes the panel |
 | In panel: D-pad / A / touch | Deck | Navigate / select. **Driving input is sent neutral while the panel is open.** |
 
@@ -132,7 +132,7 @@ The video and the STOP button stay visible.
 | LINK LOST | No `RobotState` for 300 ms | Red flashing bar |
 | BUSY | `RobotState.state = BUSY` | Amber, "another Deck is driving" |
 | STOPPED | Local latch or `state = STOPPED` | Red border + banner "STOP (teleop)" showing `stop_reason` |
-| REARM | `state = REARM` | Amber banner: "release and press LB to resume" |
+| REARM | `state = REARM` | Amber banner: "release and press L2 to resume" |
 | NO VIDEO | No frame for 1 s | Last frame dimmed with "NO VIDEO" (the controls still work) |
 | VERSION | `Info.interface_version` not supported | Full-screen "update the app" |
 

@@ -23,12 +23,21 @@ bool has_event(const std::vector<Event> & ev, EventType t) {
   return std::any_of(ev.begin(), ev.end(), [t](const Event & e) { return e.type == t; });
 }
 
+/// The generic rules are tested with a button deadman (LB); the trigger deadman (the default,
+/// L2) has its own tests below.
+Config lb_config() {
+  Config c;
+  c.deadman = Deadman::button(kButtonLB);
+  return c;
+}
+
 class Core : public ::testing::Test {
 protected:
+  explicit Core(const Config & cfg = lb_config()) : core(cfg, now) {}
   Micros now = 1'000'000'000;           // robot steady clock
   std::uint64_t deck_offset = 5'000'000; // deck clock = robot clock - offset - 3 ms latency
   std::uint32_t seq[2] = {0, 0};
-  SafetyCore core{Config{}, now};
+  SafetyCore core;
 
   void advance(Micros d) { now += d; }
 
@@ -183,7 +192,10 @@ TEST_F(Core, ShortDropRearmsAndNeedsReleaseThenPress) {
   send(0);
   EXPECT_EQ(core.state(), State::kRearm);
   advance(20 * ms);
-  s = send(RB, {0, 1});  // RB (turbo) also counts as the deadman
+  s = send(RB, {0, 1});
+  EXPECT_EQ(core.state(), State::kRearm) << "RB (turbo) isn't the deadman";
+  advance(20 * ms);
+  s = send(LB, {0, 1});
   EXPECT_TRUE(has_event(s.events, EventType::kRearmDone));
   EXPECT_EQ(core.state(), State::kOk);
   ASSERT_TRUE(s.joy);
@@ -377,4 +389,93 @@ TEST_F(Core, ActionGating) {
   send(0);
   EXPECT_EQ(core.state(), State::kRearm);
   EXPECT_EQ(core.action_refusal(kDeck, true), "stopped") << "REARM";
+}
+
+// ── trigger deadman (the default: L2 = left trigger, wire axis 4) ──
+
+namespace {
+class TriggerCore : public Core {
+protected:
+  TriggerCore() : Core(Config{}) {}
+  /// lt: left trigger 0..1 (wire); ly: left stick Y
+  Step drive(float lt, float ly = 1.0f, std::uint32_t buttons = 0) {
+    return send(buttons, {0.0f, ly, 0.0f, 0.0f, lt, 0.0f});
+  }
+};
+}  // namespace
+
+TEST(Deadman, Parse) {
+  EXPECT_EQ(parse_deadman("LT")->kind, Deadman::Kind::kAxis);
+  EXPECT_EQ(parse_deadman("l2")->index, kAxisLT);
+  EXPECT_EQ(parse_deadman("RT")->index, kAxisRT);
+  EXPECT_EQ(parse_deadman("lb")->kind, Deadman::Kind::kButton);
+  EXPECT_EQ(parse_deadman("RB")->index, kButtonRB);
+  EXPECT_FALSE(parse_deadman("A"));
+  EXPECT_FALSE(parse_deadman(""));
+}
+
+TEST_F(TriggerCore, DefaultDeadmanIsLeftTriggerWithHysteresisAndButton21) {
+  connect_and_clear();
+  Step s = drive(0.4f);
+  ASSERT_TRUE(s.joy);
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 0) << "0.4 is below the 0.5 press threshold";
+  s = drive(0.6f);
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 1);
+  EXPECT_FLOAT_EQ(s.joy->axes[4], -0.6f) << "the trigger axis itself still goes out";
+  s = drive(0.35f);
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 1) << "still above the 0.3 release threshold";
+  s = drive(0.25f);
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 0);
+  s = drive(0.45f);
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 0) << "must pass 0.5 again";
+  s = drive(std::nanf(""));
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 0) << "NaN is released";
+}
+
+TEST_F(TriggerCore, TurboOnlyPassesWithTheDeadman) {
+  connect_and_clear();
+  Step s = drive(0.0f, 1.0f, RB);
+  EXPECT_EQ(s.joy->buttons[kButtonRB], 0) << "RB alone would make teleop_twist_joy drive";
+  s = drive(1.0f, 1.0f, RB);
+  EXPECT_EQ(s.joy->buttons[kButtonRB], 1);
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 1);
+  s = drive(0.0f, 0.0f, LB | A);
+  EXPECT_EQ(s.joy->buttons[kButtonLB], 1) << "LB is a free button now";
+  EXPECT_EQ(s.joy->buttons[0], 1);
+}
+
+TEST_F(TriggerCore, RearmAndClearStopUseTheTrigger) {
+  connect_and_clear();
+  for (int i = 0; i < 10; ++i) {
+    drive(1.0f);
+    advance(20 * ms);
+    core.tick(now);
+  }
+  silence(500 * ms);
+  drive(1.0f);                       // trigger still held when the link returns
+  EXPECT_EQ(core.state(), State::kRearm);
+  advance(20 * ms);
+  drive(0.8f, 1.0f, LB);             // LB doesn't count any more
+  EXPECT_EQ(core.state(), State::kRearm);
+  advance(20 * ms);
+  drive(0.0f);
+  advance(20 * ms);
+  const Step s = drive(0.9f);
+  EXPECT_EQ(core.state(), State::kOk);
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 1);
+
+  core.on_stop(kDeck, "button_b", now);
+  advance(20 * ms);
+  drive(0.7f, 0.0f);
+  EXPECT_EQ(core.clear_stop(kDeck, seq[0] + 1, now).reason, "deadman_held");
+  advance(20 * ms);
+  drive(0.0f, 0.0f, LB);
+  EXPECT_TRUE(core.clear_stop(kDeck, seq[0] + 1, now).ok) << "LB held is fine now";
+}
+
+TEST_F(TriggerCore, NeutralJoyHasDeadmanReleased) {
+  const Step s = core.tick(now);
+  ASSERT_TRUE(s.joy);
+  EXPECT_EQ(s.joy->buttons.size(), 22u);
+  EXPECT_EQ(s.joy->buttons[kJoyDeadmanButton], 0);
 }

@@ -10,6 +10,7 @@
 //! `--headless` skips the window and prints one stats line per second.
 
 mod stats;
+mod v1;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -22,6 +23,7 @@ use clap::Parser;
 use eframe::egui;
 use spike_common::*;
 use stats::{Link, Summary, Video};
+use v1::V1;
 use zenoh::qos::{CongestionControl, Priority, Reliability};
 use zenoh::Wait;
 
@@ -65,6 +67,10 @@ struct Args {
     /// with the product router.json5 (O17).
     #[arg(long)]
     v1_keys: bool,
+    /// Speak the product interface (Protobuf on rj/v1/*) to drive the real deck_gateway:
+    /// B = STOP, View+Menu 1 s = clear STOP. Implies --v1-keys.
+    #[arg(long)]
+    v1: bool,
 }
 
 /// What the control thread last read from the gamepads.
@@ -88,6 +94,8 @@ struct Shared {
     frame_ready: Condvar,
     sent: AtomicU64,
     quit: AtomicBool,
+    /// Events from the --v1 logic (STOP, clear), shown with the link events.
+    extra_events: Mutex<Vec<String>>,
 }
 
 const BUTTONS: [(gilrs::Button, &str); 15] = [
@@ -113,7 +121,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let clock = Arc::new(MonoClock::new());
     let shared = Arc::new(Shared::default());
-    let keys = Keys::new(args.v1_keys);
+    let keys = Keys::new(args.v1_keys || args.v1);
 
     let endpoints = if args.connect.is_empty() {
         if args.no_tls {
@@ -137,13 +145,22 @@ fn main() -> Result<()> {
 
     let session_id = (clock.now_us() as u32) ^ std::process::id();
     let _token = z(session.liveliness().declare_token(format!("{}/{session_id:08x}", keys.deck_token)).wait())?;
+    let v1 = if args.v1 { Some(V1::new(session.clone(), session_id)?) } else { None };
+    if args.v1 {
+        println!("deck_spike: --v1 (Protobuf), session {session_id:08x}: B = STOP, View+Menu 1 s = clear");
+    }
 
     let _echo_sub = {
-        let (shared, clock) = (shared.clone(), clock.clone());
+        let (shared, clock, v1) = (shared.clone(), clock.clone(), v1.clone());
         z(session
             .declare_subscriber(keys.echo)
             .callback(move |sample| {
-                if let Some(e) = Echo::decode(&sample.payload().to_bytes()) {
+                let bytes = sample.payload().to_bytes();
+                let echo = match &v1 {
+                    Some(v) => v.on_robot_state(&bytes),
+                    None => Echo::decode(&bytes),
+                };
+                if let Some(e) = echo {
                     shared.link.lock().unwrap().on_echo(e, clock.now_us());
                 }
             })
@@ -176,20 +193,33 @@ fn main() -> Result<()> {
         .reliability(if args.reliable { Reliability::Reliable } else { Reliability::BestEffort })
         .wait())?;
     {
-        let (shared, clock, rate) = (shared.clone(), clock.clone(), args.rate_hz);
-        thread::spawn(move || control_loop(shared, clock, control_pub, rate));
+        let (shared, clock, rate, v1) = (shared.clone(), clock.clone(), args.rate_hz, v1.clone());
+        thread::spawn(move || control_loop(shared, clock, control_pub, rate, v1));
     }
 
-    if args.headless {
-        run_headless(&args, &shared, &clock)
+    let result = if args.headless {
+        run_headless(&args, &shared, &clock, v1.as_deref())
     } else {
-        run_gui(&args, shared, clock, endpoints)
+        run_gui(&args, shared.clone(), clock.clone(), endpoints, v1.clone())
+    };
+    if let Some(v) = &v1 {
+        // Quitting stops the robot right away (docs/interface.md § Rules, Deck).
+        shared.quit.store(true, Ordering::Relaxed);
+        v.send_stop("quit", clock.now_us());
+        thread::sleep(Duration::from_millis(200));
     }
+    result
 }
 
 /// Owns gilrs (created on this thread), sends Control every tick and
 /// immediately on any button change.
-fn control_loop(shared: Arc<Shared>, clock: Arc<MonoClock>, publisher: zenoh::pubsub::Publisher<'static>, rate_hz: u32) {
+fn control_loop(
+    shared: Arc<Shared>,
+    clock: Arc<MonoClock>,
+    publisher: zenoh::pubsub::Publisher<'static>,
+    rate_hz: u32,
+    v1: Option<Arc<V1>>,
+) {
     let mut gilrs = match gilrs::Gilrs::new() {
         Ok(g) => Some(g),
         Err(e) => {
@@ -240,13 +270,25 @@ fn control_loop(shared: Arc<Shared>, clock: Arc<MonoClock>, publisher: zenoh::pu
                 input.buttons = 0;
             }
         }
-        let control = Control { seq, deck_us: clock.now_us(), axes: input.axes, buttons: input.buttons };
+        let (axes, buttons) = (input.axes, input.buttons);
         *shared.input.lock().unwrap() = input;
+        if let Some(v) = &v1 {
+            let events = v.on_input(buttons, axes, seq.wrapping_add(1), clock.now_us());
+            for e in &events {
+                println!("{:.3} EVENT {e}", clock.now_us() as f64 / 1e6);
+            }
+            shared.extra_events.lock().unwrap().extend(events);
+        }
 
         let now = Instant::now();
         if changed || now >= next {
             seq = seq.wrapping_add(1);
-            let _ = publisher.put(Control { seq, ..control }.encode()).wait();
+            let deck_us = clock.now_us();
+            let payload = match &v1 {
+                Some(v) => v.encode_control(seq, deck_us, axes, buttons),
+                None => Control { seq, deck_us, axes, buttons }.encode().to_vec(),
+            };
+            let _ = publisher.put(payload).wait();
             shared.sent.fetch_add(1, Ordering::Relaxed);
             shared.link.lock().unwrap().on_sent(seq);
             if now >= next {
@@ -290,7 +332,7 @@ fn summary(shared: &Shared, now_us: u64) -> Summary {
     Summary::new(&link, &video, now_us)
 }
 
-fn run_headless(args: &Args, shared: &Shared, clock: &MonoClock) -> Result<()> {
+fn run_headless(args: &Args, shared: &Shared, clock: &MonoClock, v1: Option<&V1>) -> Result<()> {
     use std::io::Write;
     let mut csv = match &args.csv {
         Some(p) => {
@@ -316,6 +358,10 @@ fn run_headless(args: &Args, shared: &Shared, clock: &MonoClock) -> Result<()> {
             pads_seen = input.pads.clone();
         }
         println!("{}  | pad: {}", s.line(), input.status);
+        if let Some(v) = v1 {
+            println!("  ROBOT {}", v.status_line().0);
+        }
+        shared.extra_events.lock().unwrap().clear(); // already printed by the control loop
         for e in shared.link.lock().unwrap().take_new_events() {
             println!("  EVENT {e}");
         }
@@ -329,7 +375,7 @@ fn run_headless(args: &Args, shared: &Shared, clock: &MonoClock) -> Result<()> {
     }
 }
 
-fn run_gui(args: &Args, shared: Arc<Shared>, clock: Arc<MonoClock>, endpoints: Vec<String>) -> Result<()> {
+fn run_gui(args: &Args, shared: Arc<Shared>, clock: Arc<MonoClock>, endpoints: Vec<String>, v1: Option<Arc<V1>>) -> Result<()> {
     let viewport = egui::ViewportBuilder::default()
         .with_title("RJ spike")
         .with_inner_size([1280.0, 800.0])
@@ -338,7 +384,7 @@ fn run_gui(args: &Args, shared: Arc<Shared>, clock: Arc<MonoClock>, endpoints: V
     eframe::run_native(
         "RJ spike",
         options,
-        Box::new(move |_cc| Ok(Box::new(SpikeApp::new(shared, clock, endpoints)))),
+        Box::new(move |_cc| Ok(Box::new(SpikeApp::new(shared, clock, endpoints, v1)))),
     )
     .map_err(|e| anyhow::anyhow!("eframe: {e}"))
 }
@@ -354,10 +400,12 @@ struct SpikeApp {
     last_log: Instant,
     logged_pads: Vec<String>,
     logged_input: ([f32; 6], u32),
+    v1: Option<Arc<V1>>,
+    logged_status: String,
 }
 
 impl SpikeApp {
-    fn new(shared: Arc<Shared>, clock: Arc<MonoClock>, endpoints: Vec<String>) -> Self {
+    fn new(shared: Arc<Shared>, clock: Arc<MonoClock>, endpoints: Vec<String>, v1: Option<Arc<V1>>) -> Self {
         Self {
             shared,
             clock,
@@ -369,6 +417,8 @@ impl SpikeApp {
             last_log: Instant::now(),
             logged_pads: Vec::new(),
             logged_input: ([0.0; 6], 0),
+            v1,
+            logged_status: String::new(),
         }
     }
 }
@@ -379,7 +429,8 @@ impl eframe::App for SpikeApp {
         let ctx = &ctx;
         let s = summary(&self.shared, self.clock.now_us());
         let input = self.shared.input.lock().unwrap().clone();
-        let new_events = self.shared.link.lock().unwrap().take_new_events();
+        let mut new_events = self.shared.link.lock().unwrap().take_new_events();
+        new_events.extend(std::mem::take(&mut *self.shared.extra_events.lock().unwrap()));
         let t = self.clock.now_us() as f64 / 1e6;
         for e in &new_events {
             println!("{t:.3} EVENT {e}");
@@ -424,6 +475,14 @@ impl eframe::App for SpikeApp {
                 ui.colored_label(col, egui::RichText::new(txt).size(22.0).strong());
                 ui.label(egui::RichText::new(s.line()).monospace().size(15.0));
             });
+            if let Some(v) = &self.v1 {
+                let (line, [r, g, b]) = v.status_line();
+                ui.colored_label(egui::Color32::from_rgb(r, g, b), egui::RichText::new(&line).size(30.0).strong());
+                if line != self.logged_status {
+                    println!("{t:.3} ROBOT {line}");
+                    self.logged_status = line;
+                }
+            }
         });
 
         egui::Panel::right("info").exact_size(420.0).show(ui, |ui| {

@@ -70,7 +70,7 @@ In every streaming flow, the newest data wins: Zenoh drops instead of queueing, 
 
 The Deck link is a convenience control, **not a safety system**. Every failure has to end in *no motion*:
 
-1. **Deadman.** `teleop_twist_joy` only moves while LB is held.
+1. **Deadman.** `teleop_twist_joy` only moves while L2 (the left trigger) is held. The gateway publishes it as `/joy` button 21 and only passes turbo (RB) while it's held.
 2. **Watchdog.** No valid control for **250 ms** → `deck_gateway` publishes neutral `Joy` at 50 Hz. The Deck's liveliness token disappearing triggers the same thing.
    - **Short drop** (control back within `resume_grace_ms`, 1 s): the robot stays in **REARM**, with neutral output until the operator releases and presses the deadman again. Flaky Wi-Fi doesn't force a STOP clear, but motion never resumes on its own.
    - **Longer drop:** the stop latch is set (`link_lost`).

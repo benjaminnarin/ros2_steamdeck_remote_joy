@@ -1,5 +1,6 @@
 #include "deck_gateway/core/safety_core.hpp"
 
+#include <cctype>
 #include <cmath>
 
 namespace deck_gateway::core {
@@ -26,6 +27,42 @@ const char * to_string(EventType t) {
     case EventType::kLateControls: return "late_controls";
   }
   return "?";
+}
+
+std::optional<Deadman> parse_deadman(std::string_view name) {
+  std::string n;
+  for (char ch : name) {
+    n += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+  }
+  if (n == "LT" || n == "L2") {
+    return Deadman::axis(kAxisLT);
+  }
+  if (n == "RT" || n == "R2") {
+    return Deadman::axis(kAxisRT);
+  }
+  if (n == "LB" || n == "L1") {
+    return Deadman::button(kButtonLB);
+  }
+  if (n == "RB" || n == "R1") {
+    return Deadman::button(kButtonRB);
+  }
+  return std::nullopt;
+}
+
+bool SafetyCore::deadman_held(const ControlIn & c, bool was_held) const {
+  const Deadman & d = config_.deadman;
+  if (d.kind == Deadman::Kind::kButton) {
+    return ((c.buttons >> d.index) & 1u) != 0;
+  }
+  const float v = d.index < c.axes_count ? sanitize_axis(c.axes[d.index], 0.0f, 1.0f) : 0.0f;
+  return was_held ? v > d.release : v > d.press;
+}
+
+JoyOut SafetyCore::make_joy(const ControlIn & c, bool deadman) const {
+  const std::uint32_t buttons = deadman ? c.buttons : (c.buttons & ~config_.needs_deadman_buttons);
+  JoyOut j = to_joy(c.axes.data(), c.axes_count, buttons);
+  j.buttons[kJoyDeadmanButton] = deadman ? 1 : 0;
+  return j;
 }
 
 SafetyCore::SafetyCore(const Config & config, Micros /*now_us*/)
@@ -78,6 +115,7 @@ void SafetyCore::become_owner(std::uint32_t session, Micros now_us, Step & step)
   owner_->since_us = now_us;
   owner_->last_rx_us = now_us;
   mode_ = State::kNoControl;
+  deadman_ = false;
   rearm_released_seen_ = false;
   in_late_run_ = false;
   released_seq_.reset();  // the previous owner's sequence numbers mean nothing now
@@ -149,6 +187,8 @@ Step SafetyCore::on_control(const ControlIn & c, Micros now_us) {
   o.has_applied = true;
   o.last_applied_us = now_us;
   o.last_applied = c;
+  // After a gap, start the hysteresis fresh: a trigger resting just under `press` isn't "held".
+  deadman_ = deadman_held(c, returning ? false : deadman_);
   ++counters_.controls_applied;
 
   if (c.stop && (!released_seq_ || c.seq >= *released_seq_)) {
@@ -172,8 +212,7 @@ Step SafetyCore::on_control(const ControlIn & c, Micros now_us) {
   }
 
   if (mode_ == State::kRearm) {
-    const bool driving = (c.buttons & config_.drive_buttons) != 0;
-    if (!driving) {
+    if (!deadman_) {
       rearm_released_seen_ = true;
     } else if (rearm_released_seen_) {
       mode_ = State::kOk;
@@ -182,7 +221,7 @@ Step SafetyCore::on_control(const ControlIn & c, Micros now_us) {
   }
 
   if (!latched_ && mode_ == State::kOk) {
-    step.joy = to_joy(c.axes.data(), c.axes_count, c.buttons);
+    step.joy = make_joy(c, deadman_);
   }
   return step;
 }
@@ -237,7 +276,7 @@ ClearStopResult SafetyCore::clear_stop(
     r.reason = "sticks_not_centered";
     return r;
   }
-  if ((c.buttons & config_.drive_buttons) != 0) {
+  if (deadman_) {
     r.reason = "deadman_held";
     return r;
   }

@@ -147,8 +147,10 @@ Same order as ROS 2 `joy`'s `game_controller_node` (SDL GameController). On the 
 | Group | Buttons | Owner |
 |-------|---------|-------|
 | **Reserved for the Deck** | B (STOP), View, Menu (panel, STOP clear), Steam, Quick Access | The Deck app or SteamOS. Robot software must not bind them. |
-| **Reserved for driving** | LB (deadman), RB (turbo), left stick, right stick X | `teleop_twist_joy` |
-| **Free for the robot** | A, X, Y, D-pad (4), L3, R3, LT, RT, right stick Y | Robot-side `/joy` listeners (e.g. `joy_teleop`). Describe them with button hints. |
+| **Reserved for driving** | LT = L2 (deadman, gateway parameter `deadman`), RB (turbo, passed only while the deadman is held), left stick, right stick X | `teleop_twist_joy` via `deck_gateway` |
+| **Free for the robot** | A, X, Y, LB, D-pad (4), L3, R3, RT, right stick Y | Robot-side `/joy` listeners (e.g. `joy_teleop`). Describe them with button hints. |
+
+**Deadman in `/joy`:** `teleop_twist_joy`'s `enable_button` must be a button, but the default deadman is an analog trigger. So `deck_gateway` publishes **22 buttons**: joy's 21, plus **index 21 = "deadman held"**. On the trigger that means above 0.5, then held until it drops below 0.3, so it doesn't flicker at the threshold. `teleop_twist_joy` uses `enable_button: 21`. RB (turbo) is cleared from `/joy` unless the deadman is held, because `teleop_twist_joy` also drives on its turbo button alone. `deadman: LB|RB|RT` are also accepted. The trigger axis itself is still published (`axes[4]`).
 
 Free buttons reach the robot only through `/joy`, so they inherit its gating automatically: nothing gets through while this Deck isn't in control, while STOPPED or REARM, or with the panel open.
 
@@ -168,7 +170,7 @@ Free buttons reach the robot only through `/joy`, so they inherit its gating aut
 A stretch of late controls therefore looks like a short drop, and is handled through REARM.
 
 **Resume after a drop (gateway):** when the owner's `Control` comes back (same `session_id`):
-- **Gap < `resume_grace_ms` (1000):** state `REARM`. Neutral `Joy` continues until a `Control` with LB and RB released is followed by one with the deadman (LB or RB) pressed, then `OK`. No STOP clear is needed.
+- **Gap < `resume_grace_ms` (1000):** state `REARM`. Neutral `Joy` continues until a `Control` with the deadman released is followed by one with it held, then `OK`. No STOP clear is needed.
 - **Gap ≥ `resume_grace_ms`:** the stop latch is set (`link_lost`) and needs a normal `clear_stop`.
 - **Gap > 2 s:** ownership was already released, so the returning Deck is a new owner (`new_owner`).
 
@@ -180,7 +182,7 @@ A stretch of late controls therefore looks like a short drop, and is handled thr
   - gateway startup (`startup`);
   - **any ownership change** (`new_owner`), including the same Deck reconnecting with a new session.
 - **Reason:** while latched, a further stop keeps the first reason, but an ownership change always sets `new_owner`. That way a new owner isn't shown the previous owner's `link_lost`.
-- **Cleared only by** `clear_stop` from the owner, and only when that session's latest applied `Control` is live (not `NO_CONTROL`), has sticks within 0.1, has LB/RB released, and doesn't still have `stop = true` with `seq >= released_seq`. Refusals: `not_owner`, `no_control`, `sticks_not_centered`, `deadman_held`, `stop_still_set`.
+- **Cleared only by** `clear_stop` from the owner, and only when that session's latest applied `Control` is live (not `NO_CONTROL`), has sticks within 0.1, has the deadman released, and doesn't still have `stop = true` with `seq >= released_seq`. Refusals: `not_owner`, `no_control`, `sticks_not_centered`, `deadman_held`, `stop_still_set`.
 - **Clearing without a race:**
   1. The Deck first stops setting `Control.stop`.
   2. It then sends `clear_stop` with `released_seq` = the first seq it sent with `stop = false`.

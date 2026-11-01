@@ -140,6 +140,17 @@ private:
     c.max_control_delay_us = declare_parameter<int>("max_control_delay_ms", 150) * 1000;
     c.clear_stop_stick_tolerance =
       static_cast<float>(declare_parameter<double>("clear_stop_stick_tolerance", 0.1));
+    const auto deadman = declare_parameter<std::string>("deadman", "LT");
+    const auto parsed = core::parse_deadman(deadman);
+    if (!parsed) {
+      throw std::invalid_argument("deadman must be LT, RT, LB or RB (got '" + deadman + "')");
+    }
+    c.deadman = *parsed;
+    if (c.deadman.kind == core::Deadman::Kind::kButton && c.deadman.index == core::kButtonRB) {
+      c.needs_deadman_buttons = 0;  // RB is the deadman itself; there's no separate turbo gate
+    }
+    RCLCPP_INFO(get_logger(), "deadman: %s (published as /joy button %zu)", deadman.c_str(),
+      core::kJoyDeadmanButton);
     return c;
   }
 

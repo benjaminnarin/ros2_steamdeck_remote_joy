@@ -50,13 +50,13 @@ Beyond these (H.264/WebRTC, FEC, multiple cameras, maps, Flatpak, ...): [docs/fu
 
 | Input | Action |
 |-------|--------|
-| **LB** hold (or L4 back grip) | Deadman: enable driving |
-| **RB** hold | Turbo |
+| **L2** (left trigger) hold | Deadman: enable driving |
+| **RB** hold, with L2 | Turbo |
 | Left stick ↕ / right stick ↔ | Forward-back / turn |
 | **B** or touchscreen **STOP** | Latch teleop STOP (always, on every screen). Other `cmd_vel` sources aren't blocked unless wired to `/steamdeck/stop_latched`. |
 | **View + Menu** held 1 s, sticks centered | Clear STOP |
 | **Menu** (tap) | Open/close the Status & Actions panel. Driving input is neutral while it's open. |
-| **A, X, Y, D-pad, L3/R3, triggers** | Free for the robot (e.g. horn, lights), labelled on screen by the robot's button hints |
+| **A, X, Y, LB, D-pad, L3/R3, R2** | Free for the robot (e.g. horn, lights), labelled on screen by the robot's button hints |
 
 ## Repository layout
 

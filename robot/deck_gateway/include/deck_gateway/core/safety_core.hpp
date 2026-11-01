@@ -21,6 +21,21 @@ using Micros = std::int64_t;
 
 inline constexpr std::uint32_t kButtonLB = 9;
 inline constexpr std::uint32_t kButtonRB = 10;
+inline constexpr std::size_t kAxisLT = 4;
+inline constexpr std::size_t kAxisRT = 5;
+
+/// What counts as "the deadman is held". An analog trigger uses hysteresis.
+struct Deadman {
+  enum class Kind { kButton, kAxis };
+  Kind kind = Kind::kAxis;
+  std::uint32_t index = kAxisLT;  // button bit or wire axis index
+  float press = 0.5f;             // axis: becomes held above this...
+  float release = 0.3f;           // ...and released below this
+  static Deadman button(std::uint32_t bit) { return {Kind::kButton, bit, 0.5f, 0.3f}; }
+  static Deadman axis(std::uint32_t axis, float press = 0.5f, float release = 0.3f) {
+    return {Kind::kAxis, axis, press, release};
+  }
+};
 
 struct Config {
   Micros watchdog_us = 250'000;          // no valid control for this long -> NO_CONTROL
@@ -29,9 +44,15 @@ struct Config {
   Micros max_control_delay_us = 150'000; // late-control guard threshold
   Micros delay_window_us = 10'000'000;   // late-control guard baseline window
   float clear_stop_stick_tolerance = 0.1f;
-  /// Buttons that make teleop_twist_joy drive: LB (enable) and RB (turbo, which also enables).
-  std::uint32_t drive_buttons = (1u << kButtonLB) | (1u << kButtonRB);
+  /// Default: the left trigger (L2 on the Steam Deck). Published as /joy button 21.
+  Deadman deadman = Deadman::axis(kAxisLT);
+  /// Buttons passed to /joy only while the deadman is held. teleop_twist_joy also drives on its
+  /// turbo button alone, so without this RB would bypass the deadman.
+  std::uint32_t needs_deadman_buttons = 1u << kButtonRB;
 };
+
+/// "LT", "RT", "LB", "RB" (case-insensitive); nullopt for anything else.
+std::optional<Deadman> parse_deadman(std::string_view name);
 
 /// Values match remote_joy.v1.RobotState.State. BUSY isn't here: RobotState is broadcast and
 /// always describes the owner's state; a Deck shows BUSY itself when owner_session is another's.
@@ -152,6 +173,9 @@ private:
   void release_owner(const char * why, Step & step);
   void latch(std::string_view reason, std::uint32_t session, Step & step);
   bool sticks_centered(const ControlIn & c) const;
+  /// Applies hysteresis using the previous applied control's state.
+  bool deadman_held(const ControlIn & c, bool was_held) const;
+  JoyOut make_joy(const ControlIn & c, bool deadman) const;
 
   Config config_;
   std::optional<Owner> owner_;
@@ -161,6 +185,7 @@ private:
   std::optional<std::uint32_t> released_seq_;
   State mode_ = State::kNoControl;  // OK, NO_CONTROL or REARM; the latch overrides it
   bool rearm_released_seen_ = false;
+  bool deadman_ = false;            // from the last applied control (with hysteresis)
   bool in_late_run_ = false;
   LateControlGuard late_guard_;
   Counters counters_;

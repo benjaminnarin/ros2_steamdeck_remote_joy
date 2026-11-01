@@ -32,7 +32,7 @@ JoyOut to_joy(const float * axes, std::size_t n, std::uint32_t buttons) {
       j.axes[i] = sanitize_axis(raw, -1.0f, 1.0f);
     }
   }
-  for (std::size_t b = 0; b < kJoyButtons; ++b) {
+  for (std::size_t b = 0; b < kJoyWireButtons; ++b) {
     j.buttons[b] = static_cast<std::int32_t>((buttons >> b) & 1u);
   }
   return j;

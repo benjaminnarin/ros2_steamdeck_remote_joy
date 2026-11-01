@@ -6,8 +6,8 @@
 //
 // Usage: fake_deck [--endpoint E] [--session HEX] <command> [args]
 //   info                                   query rj/v1/info
-//   drive [seconds=2] [ly=1.0] [rx=0.0]     neutral 0.3 s, clear_stop, LB + sticks, release, neutral 0.5 s
-//   hold  [seconds=2] [buttons=HEX]         send that button mask (no clear) for a while
+//   drive [seconds=2] [ly=1.0] [rx=0.0]     neutral 0.3 s, clear_stop, L2 (left trigger) + sticks, release
+//   hold  [seconds=2] [buttons=HEX]         L2 held + that button mask (no clear) for a while
 //   stop                                    publish rj/v1/stop
 //   clear                                   neutral 0.3 s, then clear_stop
 //   gap   [before=1] [silence_ms=500] [after=1]  drive, go silent, then drive again (REARM/link_lost)
@@ -90,12 +90,12 @@ public:
     session_.reset();
   }
 
-  void send(std::uint32_t buttons, float ly = 0, float rx = 0, bool stop = false) {
+  void send(std::uint32_t buttons, float ly = 0, float rx = 0, bool stop = false, float lt = 0) {
     v1::Control c;
     c.set_session_id(session_id_);
     c.set_seq(++seq_);
     c.set_deck_time_us(now_us());
-    const float axes[6] = {0, ly, rx, 0, 0, 0};
+    const float axes[6] = {0, ly, rx, 0, lt, 0};
     for (float a : axes) {
       c.add_axes(a);
     }
@@ -105,11 +105,12 @@ public:
   }
 
   /// 50 Hz for `seconds`.
-  void stream(double seconds, std::uint32_t buttons, float ly = 0, float rx = 0) {
+  /// 50 Hz for `seconds`. `deadman` holds the left trigger (the gateway's default deadman).
+  void stream(double seconds, std::uint32_t buttons, float ly = 0, float rx = 0, bool deadman = false) {
     const auto end = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
     auto next = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() < end) {
-      send(buttons, ly, rx);
+      send(buttons, ly, rx, false, deadman ? 1.0f : 0.0f);
       next += 20ms;
       std::this_thread::sleep_until(next);
     }
@@ -236,8 +237,6 @@ private:
   std::optional<zenoh::Subscriber<void>> state_sub_;
 };
 
-constexpr std::uint32_t LB = 1u << v1::BUTTON_LB;
-
 }  // namespace
 
 int main(int argc, char ** argv) {
@@ -269,13 +268,13 @@ int main(int argc, char ** argv) {
       const auto rx = static_cast<float>(arg_or(args, 3, 0.0));
       deck.stream(0.3, 0);
       deck.clear();
-      deck.stream(secs, LB, ly, rx);
+      deck.stream(secs, 0, ly, rx, true);
       deck.stream(0.5, 0);
     } else if (cmd == "hold") {
       const double secs = arg_or(args, 1, 2.0);
       const auto buttons = args.size() > 2
-        ? static_cast<std::uint32_t>(std::strtoul(args[2].c_str(), nullptr, 16)) : LB;
-      deck.stream(secs, buttons, 1.0f);
+        ? static_cast<std::uint32_t>(std::strtoul(args[2].c_str(), nullptr, 16)) : 0u;
+      deck.stream(secs, buttons, 1.0f, 0, true);
     } else if (cmd == "stop") {
       deck.stop();
       std::this_thread::sleep_for(300ms);
@@ -289,11 +288,11 @@ int main(int argc, char ** argv) {
       const double after = arg_or(args, 3, 1.0);
       deck.stream(0.3, 0);
       deck.clear();
-      deck.stream(before, LB, 1.0f);
+      deck.stream(before, 0, 1.0f, 0, true);
       std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(silence_ms));
-      deck.stream(0.2, LB, 1.0f);  // still holding the deadman when the link returns
+      deck.stream(0.2, 0, 1.0f, 0, true);  // still holding the deadman when the link returns
       deck.stream(0.2, 0);         // release
-      deck.stream(after, LB, 1.0f);
+      deck.stream(after, 0, 1.0f, 0, true);
       deck.stream(0.3, 0);
     } else if (cmd == "watch") {
       std::this_thread::sleep_for(std::chrono::duration<double>(arg_or(args, 1, 2.0)));

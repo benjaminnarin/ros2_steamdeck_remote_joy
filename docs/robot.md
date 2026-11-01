@@ -137,6 +137,7 @@ deck_gateway:
     robot_name: mybot
     watchdog_ms: 250
     resume_grace_ms: 1000        # drops shorter than this resume via deadman re-press (REARM)
+    deadman: LT                  # LT (L2, default), RT, LB or RB -> /joy button 21
     max_control_delay_ms: 150    # late-control guard: controls delayed more than this vs. the recent minimum are ignored
     status_rate_hz: 2.0
     status_items: |               # YAML string → parsed by the node
@@ -190,8 +191,8 @@ Starts `deck_router`, `deck_gateway` (`gateway_node`) and `teleop_twist_joy`, pl
 teleop_twist_joy_node:
   ros__parameters:
     require_enable_button: true
-    enable_button: 9          # LB (or L4 grip)
-    enable_turbo_button: 10   # RB (turbo, also enables)
+    enable_button: 21         # "deadman held", made by deck_gateway (default deadman: L2)
+    enable_turbo_button: 10   # RB: the gateway only passes it while the deadman is held
     axis_linear:  {x: 1}      # left stick Y
     scale_linear: {x: 0.5}
     scale_linear_turbo: {x: 1.0}
@@ -220,7 +221,7 @@ Speeds are placeholders. The parameter names were confirmed on Lyrical in the M0
 | Command | Does |
 |---|---|
 | `info` | query `rj/v1/info` |
-| `drive [s] [ly] [rx]` | neutral, `clear_stop`, LB + sticks for `s` seconds, release |
+| `drive [s] [ly] [rx]` | neutral, `clear_stop`, L2 + sticks for `s` seconds, release |
 | `gap [before] [silence_ms] [after]` | drive, go silent, return with the deadman held, release, re-press (REARM or `link_lost`) |
 | `hold [s] [buttons_hex]` | send a button mask without clearing (e.g. as a second Deck: BUSY) |
 | `stop`, `clear`, `watch [s]` | publish `rj/v1/stop`; neutral + `clear_stop`; print state changes |

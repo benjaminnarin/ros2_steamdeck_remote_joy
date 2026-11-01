@@ -7,5 +7,6 @@ deck_gateway:
     resume_grace_ms: 1000        # drops shorter than this resume via deadman re-press (REARM)
     owner_timeout_ms: 2000
     max_control_delay_ms: 150    # late-control guard
+    deadman: LT                  # LT (L2 on the Deck, default), RT, LB or RB; /joy button 21 = held
     state_rate_hz: 5.0           # RobotState when no Control arrives
     zenoh_endpoint: tcp/127.0.0.1:7451

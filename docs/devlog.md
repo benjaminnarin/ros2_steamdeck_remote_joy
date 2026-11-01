@@ -320,6 +320,19 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
   - A new owner inherited the previous owner's stop reason (`link_lost`) when the latch was still set. An ownership change now always reports `new_owner` (core test added, 26 total).
 - **Not yet:** `robot_id` in `Info` (comes with `pair`), status, actions and hints (M3/M4), video (M2).
 
+### 3.7 Spike app on the real interface, first Deck-in-the-loop demo, deadman → L2
+
+- **`deck_spike --v1`:** a stopgap so the Deck can drive the real gateway before the Deck app exists. It sends Protobuf `Control` (X negated), B = STOP (local latch plus a reliable `Stop`), View + Menu held 1 s = `clear_stop` with `released_seq`, shows `RobotState`, and sends STOP on quit.
+- **Demo (Deck → Wi-Fi → `deck_router` → `deck_gateway` → teleop → turtlesim):** all worked first time: clear, drive, release to stop, B → `deck_stop`, clear again, quit.
+- **Decision: the deadman moves from LB to L2 (left trigger).** It's analog, and `teleop_twist_joy` needs a button, so:
+  - The gateway publishes `/joy` button **21** = "deadman held" (above 0.5, held until below 0.3), and teleop uses `enable_button: 21`.
+  - **Turbo bypass found:** `teleop_twist_joy` drives on its turbo button alone. With the deadman off LB, RB alone would have driven at turbo speed, so the gateway now clears RB from `/joy` unless the deadman is held.
+  - REARM and `clear_stop` use "deadman held". LB becomes a free button; LT becomes reserved.
+  - A `deadman` parameter (LT, RT, LB, RB).
+  - Tests: 31 core tests, with the generic rules still on a button deadman and 5 new ones for the trigger. A mutation check (no RB gate, no hysteresis, no button 21) was caught by the tests.
+  - In the sim: `/joy` has 22 buttons and teleop logged "enable button 21".
+  - On the Deck: cleared, then drove with L2. The turtle went from (6.30, 5.54) to (3.99, 6.91).
+
 ---
 
 ## How to keep this log
