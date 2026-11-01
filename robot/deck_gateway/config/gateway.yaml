@@ -1,0 +1,11 @@
+# deck_gateway defaults (docs/robot.md § Configuration). Copy and pass gateway_config:=<file>
+# to override. Status items, actions and button hints arrive with M3/M4.
+deck_gateway:
+  ros__parameters:
+    robot_name: robot
+    watchdog_ms: 250
+    resume_grace_ms: 1000        # drops shorter than this resume via deadman re-press (REARM)
+    owner_timeout_ms: 2000
+    max_control_delay_ms: 150    # late-control guard
+    state_rate_hz: 5.0           # RobotState when no Control arrives
+    zenoh_endpoint: tcp/127.0.0.1:7451

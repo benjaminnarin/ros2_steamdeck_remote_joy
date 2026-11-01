@@ -100,6 +100,7 @@ TEST_F(Core, StartsLatchedWithNoOwner) {
 TEST_F(Core, FirstSessionBecomesOwnerAndStaysLatched) {
   const Step s = send(LB, {0, 1});
   EXPECT_TRUE(has_event(s.events, EventType::kOwnerChanged));
+  EXPECT_EQ(core.robot_state().stop_reason, "new_owner") << "replaces startup";
   EXPECT_EQ(core.owner_session(), kDeck);
   EXPECT_EQ(core.state(), State::kStopped);
   ASSERT_TRUE(s.joy);
@@ -293,6 +294,18 @@ TEST_F(Core, ReleasedSeqIgnoresInFlightStopAfterClear) {
   EXPECT_EQ(core.state(), State::kOk);
   send(0, {}, true);             // a new press after the clear does latch
   EXPECT_TRUE(core.stop_latched());
+}
+
+TEST_F(Core, NewOwnerIsToldNewOwnerNotThePreviousOwnersReason) {
+  connect_and_clear();
+  stream(100 * ms, LB, {0, 1});
+  silence(1200 * ms);
+  send(LB);                                // kDeck's link_lost
+  ASSERT_EQ(core.robot_state().stop_reason, "link_lost");
+  core.on_token_lost(kDeck, now);
+  core.on_control(make(kOther), now);
+  EXPECT_EQ(core.robot_state().stop_reason, "new_owner");
+  EXPECT_EQ(core.robot_state().owner_session, kOther);
 }
 
 TEST_F(Core, NewOwnerForgetsPreviousReleasedSeq) {

@@ -84,8 +84,15 @@ void SafetyCore::become_owner(std::uint32_t session, Micros now_us, Step & step)
   late_guard_.reset();
   ++counters_.owner_changes;
   step.events.push_back({EventType::kOwnerChanged, session, replaced ? "replaced" : "first"});
-  // Any ownership change latches STOP, including the same Deck with a new session.
-  latch("new_owner", session, step);
+  // Any ownership change latches STOP, including the same Deck with a new session. The reason
+  // is always new_owner: a leftover reason (e.g. the previous owner's link_lost) would mislead.
+  if (latched_) {
+    stop_reason_ = "new_owner";
+    step.joy = neutral_joy();
+    step.events.push_back({EventType::kStopLatched, session, stop_reason_});
+  } else {
+    latch("new_owner", session, step);
+  }
 }
 
 void SafetyCore::release_owner(const char * why, Step & step) {

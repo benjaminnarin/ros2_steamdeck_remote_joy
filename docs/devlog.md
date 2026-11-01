@@ -293,6 +293,33 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
 - **Tests:** 25 gtests with a fake clock, covering every rule, including the clear-stop race (the query overtakes in-flight `stop = true` controls), and a new owner not inheriting the previous owner's `released_seq`. They passed on the first run.
 - **Mutation check:** I broke six rules one at a time: no `released_seq` guard, short drops latching, the late guard off, REARM resuming with the deadman still held, a new owner not latched, `clear_stop` ignoring the deadman. Every one made at least one test fail. They're cheap to rerun after changes.
 
+### 3.6 `deck_gateway` step 2: the node, launch and `fake_deck`
+
+- **`gateway_node`:**
+  - Wires `SafetyCore` to ROS (`/joy`, the latched `steamdeck/stop_latched` and `owner_connected` Bools, the `steamdeck/set_stop` service, `/diagnostics` "deck_gateway: link") and to zenoh-cpp:
+    - subscribers on `control` and `stop`;
+    - liveliness on `deck/*`;
+    - queryables `clear_stop` and `info`;
+    - the `robot_state` publisher (best effort, express, `RealTime`).
+  - All callbacks and the 50 Hz wall timer go through one mutex around the core.
+  - CMake fails unless ROS's zenoh-c is in the pinned series (`remote_joy_check_ros_zenoh`, 1.10.1 here).
+  - Builds with no warnings under `-Wall -Wextra -Wconversion`.
+- **`robot.launch.py`:**
+  - Starts `deck_router` with `ZENOH_ROUTER_CONFIG_URI` plus TLS paths from `tls_dir` in `ZENOH_CONFIG_OVERRIDE`, then the gateway, then teleop. `deck_sim` includes it and passes `tls_dir`.
+  - The router and gateway respawn.
+- **`fake_deck`:** a C++ stand-in Deck on the real Protobuf interface, scriptable (`info`, `drive`, `gap`, `hold`, `stop`, `clear`, `watch`). It's the basis for the `launch_testing` suites.
+- **Smoke test against `deck_sim` with the spike certificates:**
+  - `info` replies; `drive` clears the stop and moves the turtle (5.54, 5.54) → (6.38, 6.01); the round trip through router and gateway averages 2 ms.
+  - A 500 ms gap goes NO_CONTROL → REARM → OK after release and re-press.
+  - A 1500 ms gap latches `link_lost`.
+  - A second Deck sees BUSY; STOP from an observing Deck latches `deck_stop`.
+  - Neutral `/joy` runs at exactly 50 Hz with no Deck, and `/diagnostics` has every counter.
+  - Killing `gateway_node`: respawned within about 1 s, latched `startup`.
+- **Bugs found:**
+  - `launch_ros` appends `--ros-args …` to every `Node`, which `deck_router` rejected (respawn loop). It now ignores that tail (with a test).
+  - A new owner inherited the previous owner's stop reason (`link_lost`) when the latch was still set. An ownership change now always reports `new_owner` (core test added, 26 total).
+- **Not yet:** `robot_id` in `Info` (comes with `pair`), status, actions and hints (M3/M4), video (M2).
+
 ---
 
 ## How to keep this log

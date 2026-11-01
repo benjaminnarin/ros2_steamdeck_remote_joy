@@ -181,17 +181,17 @@ Behavior:
 ## Launch
 
 ```bash
-ros2 launch deck_gateway robot.launch.py image_topic:=/camera/image_raw
+ros2 launch deck_gateway robot.launch.py tls_dir:=<dir with ca.pem robot.pem robot.key>
 ```
 
-Starts the router, `deck_gateway`, `deck_video` (own container, or `video_container:=<name>` to load it into an existing one), and `teleop_twist_joy`:
+Starts `deck_router`, `deck_gateway` (`gateway_node`) and `teleop_twist_joy`, plus `deck_video` from M2 (own container, or `video_container:=<name>` to load it into an existing one). The router and the gateway are respawned after 1 s if they exit. The gateway restarts with STOP latched (`startup`), so a respawn never resumes driving by itself. Teleop uses `config/teleop_twist_joy.yaml`:
 
 ```yaml
 teleop_twist_joy_node:
   ros__parameters:
     require_enable_button: true
     enable_button: 9          # LB (or L4 grip)
-    enable_turbo_button: 10   # RB
+    enable_turbo_button: 10   # RB (turbo, also enables)
     axis_linear:  {x: 1}      # left stick Y
     scale_linear: {x: 0.5}
     scale_linear_turbo: {x: 1.0}
@@ -200,7 +200,30 @@ teleop_twist_joy_node:
     scale_angular_turbo: {yaw: 2.0}
 ```
 
-Speeds are placeholders. Check the parameter names against Jazzy (open item O7). Launch args: `image_topic`, `gateway_config` (default: the installed `config/gateway.yaml`), `video_container`, `cmd_vel_topic` (default `cmd_vel`), `cmd_vel_stamped` (default `true`), `use_video` (default `true`), `use_teleop` (default `true`).
+Speeds are placeholders. The parameter names were confirmed on Lyrical in the M0 demo.
+
+| Launch arg | Default | |
+|---|---|---|
+| `tls_dir` | `~/.config/deck_gateway/tls` | Router TLS files `ca.pem`, `robot.pem`, `robot.key` (from `pair`). The launch fails with a clear message if any is missing. |
+| `router_config` | installed `config/router.json5` | |
+| `gateway_config` | installed `config/gateway.yaml` | |
+| `use_router` | `true` | `false` to use a router started elsewhere (local endpoint `tcp/127.0.0.1:7451`) |
+| `use_teleop`, `use_video` | `true` | |
+| `cmd_vel_topic` | `cmd_vel` | |
+| `cmd_vel_stamped` | `true` | sets `teleop_twist_joy`'s `publish_stamped_twist` |
+| `image_topic`, `video_container` | `/camera/image_raw`, none | for `deck_video` (M2) |
+
+### Testing tool: `fake_deck`
+
+`ros2 run deck_gateway fake_deck [--endpoint E] <command>` is a stand-in Deck that speaks the real interface. By default it connects to the router's local endpoint, so no TLS is needed. It prints one line per result (`STATE ...`, `CLEAR ok=1 ...`, `SUMMARY states=STOPPED>OK ... rtt_ms_avg=...`).
+
+| Command | Does |
+|---|---|
+| `info` | query `rj/v1/info` |
+| `drive [s] [ly] [rx]` | neutral, `clear_stop`, LB + sticks for `s` seconds, release |
+| `gap [before] [silence_ms] [after]` | drive, go silent, return with the deadman held, release, re-press (REARM or `link_lost`) |
+| `hold [s] [buttons_hex]` | send a button mask without clearing (e.g. as a second Deck: BUSY) |
+| `stop`, `clear`, `watch [s]` | publish `rj/v1/stop`; neutral + `clear_stop`; print state changes |
 
 **Drive base (not chosen yet, open item O13).** `cmd_vel_stamped` sets `teleop_twist_joy`'s `publish_stamped_twist`:
 - `true` for ros2_control `diff_drive_controller` (`TwistStamped`);

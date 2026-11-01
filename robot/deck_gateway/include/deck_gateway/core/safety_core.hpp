@@ -108,7 +108,8 @@ struct Counters {
 
 class SafetyCore {
 public:
-  /// Starts with no owner and the stop latch set ("startup").
+  /// Starts with no owner and the stop latch set ("startup"). When the latch is already set,
+  /// a new stop keeps the first reason, except that a new owner always reports "new_owner".
   SafetyCore(const Config & config, Micros now_us);
 
   Step on_control(const ControlIn & control, Micros now_us);

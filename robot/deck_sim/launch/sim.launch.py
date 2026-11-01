@@ -1,6 +1,7 @@
 """Simulated robot: turtlesim base, test camera and fake status/services.
 
     ros2 launch deck_sim sim.launch.py [turtlesim:=false] [camera:=false] [gateway:=auto|true|false]
+                                       [tls_dir:=<dir with ca.pem robot.pem robot.key>]
 
 With deck_gateway built (gateway:=auto finds it), this also includes its robot.launch.py
 (router, gateway, video, teleop) pointed at the sim's topics, so a Deck connects to it like a
@@ -50,6 +51,7 @@ def _robot_side(context):
                     'image_topic': IMAGE,
                     'use_video': LaunchConfiguration('camera'),
                     'gateway_config': os.path.join(share, 'config', 'gateway_sim.yaml'),
+                    'tls_dir': LaunchConfiguration('tls_dir'),
                 }.items()),
         ]
 
@@ -72,6 +74,8 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_fps', default_value='30.0'),
         DeclareLaunchArgument('gateway', default_value='auto',
                               description='auto: include deck_gateway robot.launch.py if built'),
+        DeclareLaunchArgument('tls_dir', default_value='~/.config/deck_gateway/tls',
+                              description='Router TLS files (ca.pem, robot.pem, robot.key)'),
 
         Node(package='turtlesim', executable='turtlesim_node', name='turtlesim',
              condition=IfCondition(LaunchConfiguration('turtlesim'))),

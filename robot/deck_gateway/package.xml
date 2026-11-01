@@ -9,6 +9,19 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>diagnostic_updater</depend>
+  <depend>remote_joy_interface</depend>
+  <depend>zenoh_cpp_vendor</depend>  <!-- >= 0.2.12 (Jazzy) / 0.10.7 (Lyrical): checked in CMake -->
+
+  <exec_depend>deck_router</exec_depend>
+  <exec_depend>teleop_twist_joy</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
   <test_depend>ament_cmake_gtest</test_depend>
 
   <export>

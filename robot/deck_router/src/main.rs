@@ -29,7 +29,7 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), String> {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args = cli_args(std::env::args().skip(1));
     let check_only = args.first().is_some_and(|a| a == "--check");
     if check_only {
         args.remove(0);
@@ -62,6 +62,11 @@ fn run() -> Result<(), String> {
     println!("deck_router: stopping");
     session.close().wait().map_err(|e| format!("close: {e}"))?;
     Ok(())
+}
+
+/// Command-line arguments, minus the `--ros-args ...` tail that launch_ros appends to every Node.
+pub fn cli_args(args: impl Iterator<Item = String>) -> Vec<String> {
+    args.take_while(|a| a != "--ros-args").collect()
 }
 
 /// Loads the config file, applies the override string, and checks the rules that the
@@ -128,6 +133,13 @@ fn zenoh_version() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ignores_ros_args() {
+        let a = |v: &[&str]| cli_args(v.iter().map(|s| s.to_string()));
+        assert_eq!(a(&["--ros-args", "-r", "__node:=deck_router"]), Vec::<String>::new());
+        assert_eq!(a(&["--check", "f.json5", "--ros-args", "-r", "x"]), vec!["--check", "f.json5"]);
+    }
 
     #[test]
     fn overrides_parse() {

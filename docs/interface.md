@@ -179,6 +179,7 @@ A stretch of late controls therefore looks like a short drop, and is handled thr
   - the gateway's `set_stop` service;
   - gateway startup (`startup`);
   - **any ownership change** (`new_owner`), including the same Deck reconnecting with a new session.
+- **Reason:** while latched, a further stop keeps the first reason, but an ownership change always sets `new_owner`. That way a new owner isn't shown the previous owner's `link_lost`.
 - **Cleared only by** `clear_stop` from the owner, and only when that session's latest applied `Control` is live (not `NO_CONTROL`), has sticks within 0.1, has LB/RB released, and doesn't still have `stop = true` with `seq >= released_seq`. Refusals: `not_owner`, `no_control`, `sticks_not_centered`, `deadman_held`, `stop_still_set`.
 - **Clearing without a race:**
   1. The Deck first stops setting `Control.stop`.
