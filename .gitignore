@@ -1,0 +1,8 @@
+# Key and certificate material: never commit, wherever it's generated
+*.key
+*.pem
+*.srl
+*.csr
+*.p12
+*.pfx
+*.crt
