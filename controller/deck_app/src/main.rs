@@ -12,8 +12,12 @@ use deck_core::events::{self, EventLog};
 use deck_core::profiles::{self, Store};
 use deck_core::DeckCore;
 
+/// "0.1.0 (9988d30 2026-11-02)": the package version and the git commit it was built from
+/// (`-dirty` when built with uncommitted changes); see build.rs.
+pub const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("DECK_BUILD"), ")");
+
 #[derive(Parser)]
-#[command(name = "steamdeck-remote-joy", version, about = "Drive a ROS 2 robot from a Steam Deck")]
+#[command(name = "steamdeck-remote-joy", version = VERSION, about = "Drive a ROS 2 robot from a Steam Deck")]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,

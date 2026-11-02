@@ -63,6 +63,8 @@ impl Default for Clock {
 pub struct Snapshot {
     pub overlay: Option<Overlay>,
     pub robot_name: String,
+    /// The robot's (interface_version, interface_minor) once Info has arrived.
+    pub robot_interface: Option<(u32, u32)>,
     pub session_id: u32,
     pub rtt: Option<health::Rtt>,
     pub has_pad: bool,
@@ -107,6 +109,8 @@ struct State {
     fatal: Option<Overlay>,
     info_ok: bool,
     robot_name: String,
+    /// The robot's interface version and minor, from Info.
+    robot_interface: Option<(u32, u32)>,
     button_hints: Vec<ButtonHint>,
     camera: Option<CameraInfo>,
     latch: StopLatch,
@@ -283,6 +287,7 @@ impl DeckCore {
         Snapshot {
             overlay: Some(overlay),
             robot_name: st.robot_name.clone(),
+            robot_interface: st.robot_interface,
             session_id: self.session_id,
             rtt: h.rtt(),
             has_pad: st.pad.is_some(),
@@ -455,6 +460,7 @@ impl DeckCore {
             return;
         }
         st.robot_name = info.robot_name.clone();
+        st.robot_interface = Some((info.interface_version, info.interface_minor));
         st.button_hints = info.button_hints.clone();
         st.camera = info.camera;
         st.info_ok = true;

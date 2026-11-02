@@ -366,7 +366,7 @@ impl eframe::App for App {
 const MENU_W: f32 = 560.0;
 /// Buttons the app reads from the Steam Virtual Gamepad: bits 0-14 (deck_app/src/pad.rs).
 const READ_BUTTONS: u32 = 15;
-const MENU_H: f32 = 470.0;
+const MENU_H: f32 = 520.0;
 
 fn button_label(bit: u32) -> String {
     match bit {
@@ -407,6 +407,13 @@ impl App {
                     format!("{:.0} fps · {:.0} % received · level {}", v.fps, v.delivered_pct, v.level)
                 } else { "none".into() }));
                 row(ui, "Deck battery", RichText::new(battery().map(|b| format!("{b} %")).unwrap_or("–".into())));
+                row(ui, "app", RichText::new(crate::VERSION));
+                let app_if = (deck_core::SUPPORTED_INTERFACE, deck_msgs::INTERFACE_MINOR);
+                row(ui, "interface", match s.robot_interface {
+                    Some(r) => RichText::new(format!("app v{}.{} · robot v{}.{}", app_if.0, app_if.1, r.0, r.1))
+                        .color(if r == app_if { Color32::from_gray(230) } else { AMBER }),
+                    None => RichText::new(format!("app v{}.{} · robot –", app_if.0, app_if.1)),
+                });
                 row(ui, "robot status", RichText::new("arrives with M3").color(GREY));
                 row(ui, "actions", RichText::new("arrive with M4").color(GREY));
             });

@@ -105,6 +105,8 @@ Input processing: 0.12 radial stick deadzone (rescaled; the Deck's sticks rest a
 
 ## Screens (1280×800)
 
+**Version:** `steamdeck-remote-joy --version` and the Menu screen show the package version plus the git commit the build came from, e.g. `0.1.0 (9988d30 2026-11-02)`, with `-dirty` when built from uncommitted changes (`deck_app/build.rs`). `deploy_deck.sh` prints it after each deploy.
+
 **Scale:** every screen is laid out for **1280×800 points**, and the app zooms so the window is 1280 points wide (1 point = 1 pixel on the Deck). Without that, egui uses winit's display scale, and on the Deck that's **2.17**: gamescope's Xwayland reports the panel's real size (100 × 150 mm, about 210 DPI against the desktop's 96), so a 1280×800 layout came out 2.17× too big and ran off the screen (seen 2026-11-02). `--screenshot DIR` (development) saves each screen as a PNG at the window's real size and prints the scale, to check layouts on the Deck: `DISPLAY=:0 ./steamdeck-remote-joy --screenshot /tmp/shots` over SSH while Game Mode runs.
 
 **Drive** (always underneath): the video as large as the screen allows (scaled to fit, never cropped: a 4:3 camera is 1067×800 at full height), with semi-transparent strips over it:
@@ -126,7 +128,7 @@ Input processing: 0.12 radial stick deadzone (rescaled; the Deck's sticks rest a
 - The top strip will also show one "pinned" status item, e.g. robot battery, chosen by the robot's status config (M3).
 
 **Menu screen** (Menu button): a semi-transparent card over the video. Driving input is neutral while it's open; STOP (B or the touch button, which stays visible) still works.
-- **Status:** connection, robot, session, round trip, video (fps, % received, level), Deck battery. Robot status items (M3) go here: `Status.items` grouped by `group`, with a coloured level (OK/WARN/ERROR) and STALE when no update has arrived for more than 3 s.
+- **Status:** connection, robot, session, round trip, video (fps, % received, level), Deck battery, **app** version and **interface** versions (the app's and the robot's `Info.interface_version`.`interface_minor`, amber when they differ). Robot status items (M3) go here: `Status.items` grouped by `group`, with a coloured level (OK/WARN/ERROR) and STALE when no update has arrived for more than 3 s.
 - **Actions** (M4): buttons from `Info.actions`. Ones with `confirm` ask "A to confirm" first. Ones with `moves_robot` are greyed out while STOPPED or REARM, and all of them are greyed out when this Deck isn't in control. The reply is shown as a notification.
 - **Inputs (development)**, **Close (Menu)** and **Quit (stops the robot)**.
 
