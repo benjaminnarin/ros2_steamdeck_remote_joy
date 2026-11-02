@@ -1,6 +1,7 @@
 """Simulated robot: turtlesim base, test camera and fake status/services.
 
-    ros2 launch deck_sim sim.launch.py [turtlesim:=false] [camera:=false] [gateway:=auto|true|false]
+    ros2 launch deck_sim sim.launch.py [turtlesim:=false] [camera:=true|webcam|false] [camera_device:=/dev/video0]
+                                       [gateway:=auto|true|false]
                                        [config_dir:=<pair --dir>] [tls_dir:=<dir with ca.pem robot.pem robot.key>]
 
 With deck_gateway built (gateway:=auto finds it), this also includes its robot.launch.py
@@ -15,7 +16,7 @@ from ament_index_python.packages import PackageNotFoundError, get_package_share_
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription, LogInfo,
                             OpaqueFunction)
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, LaunchConfigurationEquals
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -34,6 +35,9 @@ def _gateway_share():
 def _robot_side(context):
     share = get_package_share_directory('deck_sim')
     mode = LaunchConfiguration('gateway').perform(context).lower()
+    camera = LaunchConfiguration('camera').perform(context)
+    if camera not in ('true', 'webcam', 'false'):
+        raise RuntimeError(f'camera:={camera}: expected true (test pattern), webcam or false')
     gw = _gateway_share()
     if mode not in ('auto', 'true', 'false'):
         raise RuntimeError(f'gateway:={mode}: expected auto, true or false')
@@ -49,7 +53,7 @@ def _robot_side(context):
                     'cmd_vel_topic': CMD_VEL,
                     'cmd_vel_stamped': 'false',
                     'image_topic': IMAGE,
-                    'use_video': LaunchConfiguration('camera'),
+                    'use_video': 'false' if camera == 'false' else 'true',
                     'gateway_config': os.path.join(share, 'config', 'gateway_sim.yaml'),
                     'tls_dir': LaunchConfiguration('tls_dir'),
                     'config_dir': LaunchConfiguration('config_dir'),
@@ -71,10 +75,13 @@ def generate_launch_description():
         DeclareLaunchArgument('turtlesim', default_value='true',
                               description='Start the turtlesim window as the base (needs a display)'),
         DeclareLaunchArgument('camera', default_value='true',
-                              description='Start the test-pattern camera (and video, with the gateway)'),
+                              description='true: test pattern; webcam: a V4L2 webcam (camera_device); '
+                                          'false: no camera and no video'),
+        DeclareLaunchArgument('camera_device', default_value='/dev/video0',
+                              description='Webcam device for camera:=webcam'),
         DeclareLaunchArgument('camera_fps', default_value='30.0'),
         # 480x360 bgr8 (506 KB) crosses processes intact; 640x480 (900 KB) lost ~17% of frames
-        # between processes with Fast DDS defaults (devlog 3.11).
+        # between processes with Fast DDS defaults (devlog 3.11). The webcam is scaled to this width.
         DeclareLaunchArgument('camera_width', default_value='480'),
         DeclareLaunchArgument('camera_height', default_value='360'),
         DeclareLaunchArgument('gateway', default_value='auto',
@@ -93,6 +100,11 @@ def generate_launch_description():
              parameters=[{'fps': LaunchConfiguration('camera_fps'),
                           'width': LaunchConfiguration('camera_width'),
                           'height': LaunchConfiguration('camera_height')}],
-             condition=IfCondition(LaunchConfiguration('camera'))),
+             condition=LaunchConfigurationEquals('camera', 'true')),
+        Node(package='deck_sim', executable='webcam', name='webcam',
+             parameters=[{'device': LaunchConfiguration('camera_device'),
+                          'fps': LaunchConfiguration('camera_fps'),
+                          'max_width': LaunchConfiguration('camera_width')}],
+             condition=LaunchConfigurationEquals('camera', 'webcam')),
         OpaqueFunction(function=_robot_side),
     ])

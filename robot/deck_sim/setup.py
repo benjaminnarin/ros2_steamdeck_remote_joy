@@ -25,6 +25,7 @@ setup(
         'console_scripts': [
             'fake_robot = deck_sim.fake_robot:main',
             'test_camera = deck_sim.test_camera:main',
+            'webcam = deck_sim.webcam:main',
         ],
     },
 )

@@ -48,6 +48,7 @@ robot/deck_sim/                  # ament_python: development and CI without a re
 ├── deck_sim/fake_robot.py       # BatteryState (slow drain), Odometry from cmd_vel, /diagnostics, /dock + /lights services,
 │                                #   and a /joy listener (A = "horn" log line, X = lights) to exercise button hints
 ├── deck_sim/test_camera.py      # moving test pattern on /camera/image_raw
+├── deck_sim/webcam.py           # a V4L2 webcam on /camera/image_raw (camera:=webcam)
 ├── deck_sim/model.py            # ROS-free battery/odometry models (pytest)
 ├── config/gateway_sim.yaml      # gateway status items, actions and hints matching the sim
 └── launch/sim.launch.py
@@ -243,10 +244,11 @@ Either way the base must zero velocity on stale commands (e.g. `cmd_vel_timeout`
 `ros2 launch deck_sim sim.launch.py` runs the full robot side with nothing physical attached:
 - the router, `deck_gateway`, `deck_video` and `teleop_twist_joy`, by including `deck_gateway`'s `robot.launch.py` with `gateway_config:=deck_sim/config/gateway_sim.yaml`;
 - **turtlesim** as the "base" (`cmd_vel_topic:=/turtle1/cmd_vel`, `cmd_vel_stamped:=false`, which also exercises the plain-`Twist` path);
-- **`test_camera`**: a moving test pattern (frame counter, timestamp, a bar sweeping once per second, colour bars) at 640×480 and 30 fps, so dropped frames and latency are visible on the Deck. It replaces `image_publisher`, which isn't installed by default;
+- **`test_camera`**: a moving test pattern (frame counter, timestamp, a bar sweeping once per second, colour bars) at 480×360 and 30 fps, so dropped frames and latency are visible on the Deck. It replaces `image_publisher`, which isn't installed by default;
+- or, with `camera:=webcam`, **`webcam`**: a real V4L2 webcam (`camera_device`, default `/dev/video0`) through OpenCV in MJPEG at 640×480, scaled to `camera_width` (480) before publishing. Raw mode tops out around 15 fps on typical USB webcams, and full 640×480 `bgr8` frames lose ~17% between processes with Fast DDS (devlog § 3.11). Frames are stamped when they're read, so the Deck's capture → shown latency includes the webcam. The laptop webcam gave 15 fps in a dim room (auto-exposure), at ~11 KB per frame;
 - **`fake_robot`**: a battery that slowly drains (faster while moving, charges when docked), odometry, `/diagnostics`, `/lights_on`, and `std_srvs/Trigger` `/dock` (`moves_robot`; teleports the turtle home) plus `SetBool` `/lights` services, so actions can be tested. On `/joy`, A logs a horn and X toggles the lights.
 
-Launch arguments: `turtlesim` (default `true`; needs a display), `camera` (default `true`), `camera_fps`, and `gateway` (`auto` | `true` | `false`). With `auto`, the robot side is included only if `deck_gateway` is built. Otherwise the sim starts `teleop_twist_joy` itself, so anything publishing `/joy` drives the turtle.
+Launch arguments: `turtlesim` (default `true`; needs a display), `camera` (`true`: test pattern, the default; `webcam`; `false`: no camera and no video), `camera_device`, `camera_fps`, `camera_width`/`camera_height`, and `gateway` (`auto` | `true` | `false`). With `auto`, the robot side is included only if `deck_gateway` is built. Otherwise the sim starts `teleop_twist_joy` itself, so anything publishing `/joy` drives the turtle.
 
 A real Deck (or a laptop running `deck_app`) connects to it like a real robot, so M1–M4 can be built before the robot is ready. CI uses the same launch file headless for the `launch_testing` suites. Swap turtlesim for a Gazebo model when you need physics or a simulated camera.
 
