@@ -125,12 +125,45 @@ TEST(RateControl, StepsBackUpAfterTheHoldAndBacksOffAFailedProbe) {
   s.run(400, 300);  // the probe failed right away
   EXPECT_EQ(s.rc.level(), 1);
   EXPECT_EQ(s.rc.up_hold_us(), 10'000 * kMs) << "hold doubled";
-  s.run(6'000, 20);
+  s.run(6'000, 40);  // fine, but not quiet (a standing queue, like the 3 Mbit/s cap's ~47 ms)
   EXPECT_EQ(s.rc.level(), 1) << "waits the longer hold";
-  s.run(5'000, 20);
+  EXPECT_EQ(s.rc.up_hold_us(), 10'000 * kMs);
+  s.run(5'000, 40);
   EXPECT_EQ(s.rc.level(), 0);
   s.run(11'000, 20);
   EXPECT_EQ(s.rc.up_hold_us(), 5'000 * kMs) << "the step up held: hold back to normal";
+}
+
+TEST(RateControl, AQuietLinkResetsADoubledHold) {
+  Sim s;
+  s.run(2'000, 20);
+  s.run(400, 300);
+  for (int i = 0; i < 3; ++i) {  // a long weak spell: each step up fails at once
+    const int before = s.rc.level();
+    while (s.rc.level() >= before) {
+      s.run(200, 60);  // fine, but not quiet
+    }
+    s.run(400, 300);
+  }
+  ASSERT_GE(s.rc.level(), 1);
+  ASSERT_EQ(s.rc.up_hold_us(), 40'000 * kMs) << "doubled three times";
+  const int l = s.rc.level();
+  s.run(5'400, 10);  // the link clears: 10 ms, nothing queueing
+  EXPECT_EQ(s.rc.up_hold_us(), 5'000 * kMs) << "back to the normal hold";
+  EXPECT_EQ(s.rc.level(), l - 1) << "and it steps up straight away";
+  s.run(5'000 * l, 10);
+  EXPECT_EQ(s.rc.level(), 0) << "then one level per normal hold";
+}
+
+TEST(RateControl, ANewSessionStartsWithTheNormalHold) {
+  Sim s;
+  s.run(2'000, 20);
+  s.run(400, 300);
+  s.run(5'400, 40);
+  s.run(400, 300);  // failed probe: hold doubled
+  ASSERT_EQ(s.rc.up_hold_us(), 10'000 * kMs);
+  s.rc.reset_sessions(s.t);  // the Deck leaves; another connects
+  EXPECT_EQ(s.rc.up_hold_us(), 5'000 * kMs);
 }
 
 TEST(RateControl, LossStepsDown) {

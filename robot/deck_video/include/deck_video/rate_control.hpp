@@ -58,6 +58,9 @@ struct Feedback {
 struct AdaptConfig {
   std::int64_t high_delay_us = 150'000;  // above: step down
   std::int64_t low_delay_us = 75'000;    // below (and little loss) for up_hold: step up
+  // Below this (and little loss) for up_hold, nothing is queueing anywhere: a hold doubled by
+  // failed probes goes back to normal, so recovery after a long weak spell isn't minutes.
+  std::int64_t quiet_delay_us = 25'000;
   double high_loss = 0.10;
   double low_loss = 0.02;
   std::int64_t up_hold_us = 5'000'000;       // doubled after a step up that fails within probe_us
@@ -111,6 +114,9 @@ public:
     if (warm) {
       last_warm_us_ = now_us;
     }
+    if (!(delay && *delay < c_.quiet_delay_us && loss <= c_.low_loss)) {
+      last_noisy_us_ = now_us;
+    }
     // Act only on frames sent after the last change, and not while the queue the previous
     // level built is still draining (delay falling report to report): the frames sent just
     // after a change wait behind it, which says nothing about the new level.
@@ -135,10 +141,15 @@ public:
     if (any_feedback_us_ != 0 && now_us - any_feedback_us_ > c_.stale_us) {
       // Feedback stopped while a Deck still watches: the link is probably in trouble.
       last_warm_us_ = now_us;
+      last_noisy_us_ = now_us;
       if (now_us - last_change_us_ >= c_.stale_us) {
         step_down(now_us, 1);
       }
       return;
+    }
+    if (up_hold_us_ > c_.up_hold_us && now_us - last_noisy_us_ >= c_.up_hold_us) {
+      up_hold_us_ = c_.up_hold_us;  // the link has gone quiet: whatever failed the probes is gone
+      last_up_us_ = 0;
     }
     // No feedback at all (an app older than interface minor 1, or one just connecting) or
     // a good link: step back up gradually.
@@ -153,12 +164,15 @@ public:
     }
   }
 
-  /// No Deck watching any more: forget sessions, keep the level, and wait a hold before
-  /// stepping up (a Deck that's reconnecting resumes from here).
+  /// No Deck watching any more: forget sessions, keep the level, and wait a normal hold
+  /// before stepping up (a Deck that's reconnecting resumes from here). The next session
+  /// starts with the normal hold, not one doubled by an earlier session's failed probes.
   void reset_sessions(std::int64_t now_us) {
     sessions_.clear();
     any_feedback_us_ = 0;
     last_warm_us_ = now_us;
+    up_hold_us_ = c_.up_hold_us;
+    last_up_us_ = 0;
   }
 
 private:
@@ -242,6 +256,7 @@ private:
   std::uint32_t change_frame_id_ = 0;
   std::int64_t last_change_us_ = 0;
   std::int64_t last_warm_us_ = 0;
+  std::int64_t last_noisy_us_ = 0;
   std::int64_t last_up_us_ = 0;
   std::int64_t any_feedback_us_ = 0;
   std::optional<std::int64_t> last_delay_us_;
