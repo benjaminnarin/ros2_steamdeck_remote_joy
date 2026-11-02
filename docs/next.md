@@ -8,15 +8,17 @@ The resume point between work sessions. Update it when stopping; delete entries 
 
 - **M0, M1, M2 done.** O19 (video delaying `RobotState` on a weak link) is answered: two QUIC links per Deck (`prio=0-2`, `prio=3-7`) plus adaptive video from the Deck's `VideoFeedback` (devlog § 4.2).
 - **Real robot:** the TurtleBot 1 (Create 1 base + RealSense D455) drives with video from the Deck: `ros2 launch deck_turtlebot turtlebot.launch.py` (robot.md § TurtleBot 1; source `~/create_ws` first). This laptop is the robot computer.
+- **Deck app UI (2026-11-02, on the Deck as `fee865c`):** full-screen video with semi-transparent strips (status; stats behind a button), a smaller touch STOP, a Menu card (status, app and interface versions, Inputs, Close, Quit) and a development Inputs screen (every input live). The app now lays out on a 1280-point canvas: gamescope made egui use a 2.17 scale, which is why screens didn't fit (controller.md § Scale). `--screenshot DIR` captures each screen on the Deck; `--version` / the Menu show the git commit.
+- **Deploys:** `deploy_deck.sh` checks SSH first (Tailscale may print a login URL to approve) and reuses one connection for 10 min.
 - Recent extras: Steam Library artwork (`controller/assets/steam/`), and `camera:=webcam` in the sim (`deck_sim/webcam.py`).
-- `main` is pushed; see `git log` for the last commit.
+- `main` is pushed and clean; see `git log` for the last commit. The TurtleBot base and RealSense are unplugged at the moment.
 - **Dev setup:** pairing state lives in `~/.config/deck_gateway/` (no shims). Run the sim with
   `source install/setup.bash && ros2 launch deck_sim sim.launch.py camera:=webcam` (or `camera:=true` for the test pattern).
 - **Next up: M3 Status.** A design review is written below but **not yet discussed with the user**. Go through it with them first; nothing below has been applied to the docs or code.
 
 ## M3 Status: design review (pending)
 
-Current spec: [interface.md](interface.md) (`rj/v1/status`, `Status`/`StatusItem`), [robot.md § Status](robot.md#status), [controller.md](controller.md) (panel Status tab, pinned item). Already in place: `status.proto`, the status golden file, the router's ACL and 64 KB limit, `gateway_sim.yaml` status items, and `fake_robot` publishing `/battery_state`, `/odom`, `/diagnostics`, `/lights_on` (latched). Not built: the gateway's status code (`status_sources.cpp` in robot.md doesn't exist yet) and the Deck's Status tab (`ui.rs` shows a placeholder).
+Current spec: [interface.md](interface.md) (`rj/v1/status`, `Status`/`StatusItem`), [robot.md § Status](robot.md#status), [controller.md](controller.md) (Menu screen, pinned item in the top strip). **New since the review:** the Deck panel is now the Menu card, which has little room left; status items will need their own screen (like the Inputs screen) or a scrolling section, and the pinned item goes in the top strip. Already in place: `status.proto`, the status golden file, the router's ACL and 64 KB limit, `gateway_sim.yaml` status items, and `fake_robot` publishing `/battery_state`, `/odom`, `/diagnostics`, `/lights_on` (latched). Not built: the gateway's status code (`status_sources.cpp` in robot.md doesn't exist yet) and the Deck's Status tab (`ui.rs` shows a placeholder).
 
 Keep: a full snapshot every tick (a lost message is repaired by the next one, no deltas).
 
@@ -51,11 +53,10 @@ Then: update interface.md, robot.md, controller.md and `status.proto`, and build
 - [ ] End-to-end launch test of video feedback with `fake_deck` (feedback in → `deck_video` level changes).
 - [ ] Field walk test: the Deck at the edge of Wi-Fi, watching the level and RTT (`bench --seconds N`).
 - [ ] Optional tuning: at most one step down per loss burst; a finer step between 15 and 20 fps.
-- [ ] Webcam: keep a constant 30 fps in dim light (set the camera's `exposure_dynamic_framerate` off / fixed exposure in `webcam.py`); it drops to ~15 fps now.
+- [ ] Optional, sim only: the laptop webcam gives 7 fps in a dim room. Turning `exposure_dynamic_framerate` off (V4L2 control 0x009a0903) raised it to 15; a fixed 15 ms exposure stayed at 15, so the rest of the limit is in the camera or `webcam.py` (maybe the Python `msg.data` copy). The user is fine with it as a source limit; the RealSense runs at 30 fps.
 
 ### Deck controls
 - [ ] **R4/R5 back grips don't reach the app** (seen 2026-11-02 on the Inputs screen). In Game Mode the app only sees the Steam Virtual Gamepad (an Xbox 360 pad: 15 buttons), and `pad.rs` reads bits 0–14, so the grips only arrive if the Steam Input layout maps them to one of those buttons (the L grips do, as another button; R4/R5 aren't mapped). Options: map R4/R5 in the app's Steam Input layout (no code; they arrive as that button), or read the controller natively via hidraw to fill the reserved buttons 16–19 (future.md § Native back grips; unproven while Steam owns the controller).
-- [ ] Text size on the Deck: screens now lay out at 1 pixel per point (15–24 px fonts); check readability at arm's length and raise font sizes if needed.
 
 ### Open items ([architecture.md](architecture.md#open-items-to-resolve-in-m0-or-during-build))
 - [ ] **O16**: re-measure Wi-Fi delay spikes with power saving off on the Deck and robot.
