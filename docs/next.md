@@ -53,6 +53,10 @@ Then: update interface.md, robot.md, controller.md and `status.proto`, and build
 - [ ] Optional tuning: at most one step down per loss burst; a finer step between 15 and 20 fps.
 - [ ] Webcam: keep a constant 30 fps in dim light (set the camera's `exposure_dynamic_framerate` off / fixed exposure in `webcam.py`); it drops to ~15 fps now.
 
+### Deck controls
+- [ ] **R4/R5 back grips don't reach the app** (seen 2026-11-02 on the Inputs screen). In Game Mode the app only sees the Steam Virtual Gamepad (an Xbox 360 pad: 15 buttons), and `pad.rs` reads bits 0–14, so the grips only arrive if the Steam Input layout maps them to one of those buttons (the L grips do, as another button; R4/R5 aren't mapped). Options: map R4/R5 in the app's Steam Input layout (no code; they arrive as that button), or read the controller natively via hidraw to fill the reserved buttons 16–19 (future.md § Native back grips; unproven while Steam owns the controller).
+- [ ] Text size on the Deck: screens now lay out at 1 pixel per point (15–24 px fonts); check readability at arm's length and raise font sizes if needed.
+
 ### Open items ([architecture.md](architecture.md#open-items-to-resolve-in-m0-or-during-build))
 - [ ] **O16**: re-measure Wi-Fi delay spikes with power saving off on the Deck and robot.
 - [ ] **O4**: DSCP for QUIC (nftables fallback on UDP 7450); upstream draft U5.

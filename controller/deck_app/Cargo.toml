@@ -16,4 +16,5 @@ anyhow.workspace = true
 clap.workspace = true
 eframe.workspace = true
 gilrs.workspace = true
+png = "0.18"
 serde_json.workspace = true

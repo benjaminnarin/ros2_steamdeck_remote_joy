@@ -26,6 +26,10 @@ struct Cli {
     /// Window instead of fullscreen (development).
     #[arg(long)]
     windowed: bool,
+    /// Development: show each screen (Drive, Drive with stats, Menu, Inputs) for 1.5 s, save it
+    /// as <DIR>/<screen>.png at the window's real size and scale, print the scale, then exit.
+    #[arg(long, value_name = "DIR")]
+    screenshot: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -116,7 +120,7 @@ fn main() -> Result<()> {
                 println!("{l}");
             }
         }
-        None => run_gui(&store, log, cli.windowed)?,
+        None => run_gui(&store, log, cli.windowed, cli.screenshot)?,
     }
     Ok(())
 }
@@ -176,7 +180,7 @@ fn bench(store: &Store, log: Arc<EventLog>, seconds: f64) -> Result<()> {
     Ok(())
 }
 
-fn run_gui(store: &Store, log: Arc<EventLog>, windowed: bool) -> Result<()> {
+fn run_gui(store: &Store, log: Arc<EventLog>, windowed: bool, screenshot: Option<PathBuf>) -> Result<()> {
     let profile = store.active()?;
     let core = DeckCore::start(profile, log, Box::new(|| Box::new(pad::GilrsPad::new()) as Box<dyn deck_core::PadSource>));
     println!("steamdeck-remote-joy: session {:08x}", core.session_id());
@@ -188,7 +192,7 @@ fn run_gui(store: &Store, log: Arc<EventLog>, windowed: bool) -> Result<()> {
     let result = eframe::run_native(
         "steamdeck-remote-joy",
         eframe::NativeOptions { viewport, ..Default::default() },
-        Box::new(move |_cc| Ok(Box::new(ui::App::new(c)))),
+        Box::new(move |_cc| Ok(Box::new(ui::App::new(c, screenshot)))),
     );
     core.shutdown(); // Stop, withdraw the token, close the session
     result.map_err(|e| anyhow::anyhow!("eframe: {e}"))

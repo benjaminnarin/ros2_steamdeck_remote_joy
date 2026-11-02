@@ -70,6 +70,9 @@ pub struct Snapshot {
     /// Wire axes and buttons last sent (or that would be sent).
     pub axes: [f32; 6],
     pub buttons: u32,
+    /// The pad as read, even while the panel sends neutral (Menu screen input view).
+    pub pad_axes: [f32; 6],
+    pub pad_buttons: u32,
     pub deadman: bool,
     pub turbo: bool,
     pub local_latch: bool,
@@ -286,6 +289,8 @@ impl DeckCore {
             pad_name: st.pad.clone().unwrap_or_default(),
             axes: f.axes,
             buttons: f.buttons,
+            pad_axes: f.pad_axes,
+            pad_buttons: f.pad_buttons,
             deadman: f.axes[4] > 0.5,
             turbo: f.buttons & input::bit(v1::Button::Rb) != 0,
             local_latch: st.latch.latched(),

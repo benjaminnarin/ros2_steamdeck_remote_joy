@@ -63,6 +63,10 @@ pub struct Frame {
     pub clear_progress: f32,
     /// Why a held combo isn't counting (for the UI), e.g. "center the sticks".
     pub clear_blocked: Option<&'static str>,
+    /// The pad as read (wire order and signs), before the panel neutralizes `axes`/`buttons`:
+    /// for the Menu screen's input view, never sent.
+    pub pad_axes: [f32; 6],
+    pub pad_buttons: u32,
 }
 
 #[derive(Debug, Default)]
@@ -110,7 +114,7 @@ impl InputState {
         // Wire: +1 = left, so negate gilrs X (right = +). Y is already up = +.
         let axes = [-lx, ly, -rx, ry, lt, rt];
 
-        let mut f = Frame { axes, buttons: raw.buttons, ..Default::default() };
+        let mut f = Frame { axes, buttons: raw.buttons, pad_axes: axes, pad_buttons: raw.buttons, ..Default::default() };
         let pressed = raw.buttons & !self.prev_buttons;
         let released = self.prev_buttons & !raw.buttons;
         self.prev_buttons = raw.buttons;
@@ -310,6 +314,9 @@ mod tests {
         assert_eq!(f.axes, [0.0; 6]);
         assert_eq!(f.buttons, 0);
         assert_eq!(f.actions, vec![Action::Stop("button_b")], "STOP works on every screen");
+        assert_eq!(f.pad_buttons, LB | B, "the Menu screen still sees the pad");
+        assert_eq!(f.pad_axes[1], 1.0);
+        assert_eq!(f.pad_axes[4], 1.0);
     }
 
     #[test]

@@ -1129,6 +1129,7 @@ dependencies = [
  "deck_msgs",
  "eframe",
  "gilrs",
+ "png",
  "serde_json",
 ]
 
