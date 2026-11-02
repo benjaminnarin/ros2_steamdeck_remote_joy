@@ -15,7 +15,7 @@ pub use prost::Message;
 /// Interface version this crate speaks (`Info.interface_version`).
 pub const INTERFACE_VERSION: u32 = 1;
 /// Additive revision within v1 (`Info.interface_minor`).
-pub const INTERFACE_MINOR: u32 = 0;
+pub const INTERFACE_MINOR: u32 = 1; // 1: VideoFeedback, VideoFrame.level
 /// crates.io Zenoh version for the Deck app (`crates=` in `interface/ZENOH_VERSION`). Crates
 /// that depend on `zenoh` check their exact pin, and that their Cargo.lock has
 /// quinn-proto >= 0.11.18 (see robot/deck_router/tests/pins.rs).

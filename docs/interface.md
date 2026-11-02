@@ -25,7 +25,8 @@ All keys are under `rj/v1/`. Each robot has its own router, so robot names don't
 | `rj/v1/stop` | put | Deck → robot | `Stop` | **reliable** | block | `RealTime` | yes | on STOP press |
 | `rj/v1/robot_state` | put | robot → Deck | `RobotState` | best effort | drop | `RealTime` | yes | on each `Control` + 5 Hz |
 | `rj/v1/status` | put | robot → Deck | `Status` | best effort | drop | `Data` | no | 2 Hz (config) |
-| `rj/v1/video` | put | robot → Deck | `VideoFrame` | best effort | drop | `InteractiveLow` | no | ≤ 30 fps, only while subscribed |
+| `rj/v1/video` | put | robot → Deck | `VideoFrame` | best effort | drop | `InteractiveLow` | no | ≤ 30 fps, only while subscribed; adaptive |
+| `rj/v1/video_feedback` | put | Deck → robot | `VideoFeedback` | best effort | drop | `InteractiveHigh` | no | 5 Hz once video arrives (minor 1) |
 | `rj/v1/info` | queryable | robot | `InfoRequest` → `Info` | | | | | on connect |
 | `rj/v1/clear_stop` | queryable | robot | `ClearStopRequest` → `ClearStopReply` | | | | | on combo |
 | `rj/v1/action/<id>` | queryable | robot | `ActionRequest` → `ActionReply` | | | | | on demand, 10 s timeout |
@@ -118,6 +119,13 @@ message VideoFrame {
   uint32 height                = 5;
   Codec  codec                 = 6;
   bytes  data                  = 7;  // one complete JPEG
+  uint32 level                 = 8;  // adaptive rate level: 0 = configured rate, higher = reduced (minor 1)
+}
+message VideoFeedback {               // minor 1; see Rules: Adaptive video
+  fixed32 session_id        = 1;
+  uint32  last_frame_id     = 2;  // newest VideoFrame.frame_id received
+  uint32  last_frame_age_us = 3;  // Deck time from receiving it to sending this
+  uint32  frames_received   = 4;  // VideoFrames received this session (wraps)
 }
 ```
 
@@ -199,9 +207,11 @@ A stretch of late controls therefore looks like a short drop, and is handled thr
 - On a STOP press, sends `Stop` (reliable) *and* sets `Control.stop`.
 - Ignores `RobotState` fields that refer to another owner, and shows BUSY when `owner_session` is another session's.
 
+**Adaptive video (`deck_video`, minor 1):** each Deck that receives video sends `VideoFeedback` every 200 ms. `deck_video` remembers when it sent each frame, so on its own clock a frame's delay is `feedback arrival − send time of last_frame_id − last_frame_age_us` (plus the feedback's own trip on the RealTime link; no clock sync). Loss is `frames_received` against `frame_id` gaps over the last 5 reports (about 1 s), counted only once that window is full again after a change, so one loss burst costs at most a step per second. It steps down a ladder (fps first, then JPEG quality, then size) when the delay exceeds 150 ms or loss 10%, at most once per frame sent after the previous change and not while the delay is falling (the old queue draining). It steps up one level after 5 s below 75 ms and 2% loss; a step up that fails within 10 s doubles that hold (up to 40 s). With several Decks, the worst one sets the rate. If feedback stops while a Deck still watches, it steps down once a second. A Deck that never sends feedback (minor 0) gets the configured rate. `VideoFrame.level` tells the Deck the current level.
+
 **Limits:**
 - The Deck drops a `VideoFrame` whose `data` is over 512 KB, and keeps at most one frame queued for decode.
-- The router limits payload size per key in its configuration: control, stop and queries ≤ 1 KB, status ≤ 64 KB, video ≤ 512 KB.
+- The router limits payload size per key in its configuration: control, stop, video feedback and queries ≤ 1 KB, status ≤ 64 KB, video ≤ 512 KB.
 
 ## Clock offset and latency
 
@@ -216,7 +226,7 @@ A stretch of late controls therefore looks like a short drop, and is handled thr
 
 - **Pairing, file method (MVP):** `ros2 run deck_gateway pair --deck <name> --host <name-or-ip>...` creates the robot's private CA and server certificate on first use. It then issues a client certificate with a **unique** CN `<name>-<6 random hex>` (e.g. `deck1-3fa9c2`) and adds that exact CN to the router's allowed list. Output: `<name>.bundle.tar` containing `ca.pem`, `client.pem`, `client.key`, and `robot.toml` (robot ID, name, endpoints). Online pairing methods are post-MVP ([future.md](future.md#online-enrollment)).
 - **Allow list:** `pair` renders `~/.config/deck_gateway/router.json5` from the installed template, filling the `decks` subject's `cert_common_names` with the active CNs. Zenoh rejects an empty list, so with no paired Decks it holds `no-paired-decks`, a name `pair` never issues.
-- **Router access control:** on the network endpoint, only allowed certificate CNs may put `rj/v1/control` and `rj/v1/stop`, query `rj/v1/info|clear_stop|action/*`, declare `rj/v1/deck/*` tokens, and subscribe to robot keys. Only the local endpoint may publish robot keys or declare queryables (open item O6: confirm the syntax).
+- **Router access control:** on the network endpoint, only allowed certificate CNs may put `rj/v1/control`, `rj/v1/stop` and `rj/v1/video_feedback`, query `rj/v1/info|clear_stop|action/*`, declare `rj/v1/deck/*` tokens, and subscribe to robot keys. Only the local endpoint may publish robot keys or declare queryables (open item O6: confirm the syntax).
 - **Revoke a Deck:** `pair --revoke <name>` removes its CN from the allowed list and reloads the router. CNs are never reissued, so re-pairing a Deck with the same name gives it a new CN, and the old certificate stays locked out. (The CA isn't checked for revoked certificates, so the allow-list *is* the revocation mechanism.) Reloading drops connected Decks, and a robot being driven stops.
 - **What it gives:** encryption, authentication of both ends, replay protection (all from TLS), and no access for devices that haven't been paired.
 

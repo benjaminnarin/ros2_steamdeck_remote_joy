@@ -178,6 +178,10 @@ impl eframe::App for App {
                     p.image(t.id(), img, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), tint);
                     if !s.video_live {
                         p.text(rect.center(), Align2::CENTER_CENTER, "NO VIDEO", FontId::proportional(56.0), RED);
+                    } else if s.video.level > 0 {
+                        // The robot lowered the video rate for a weak link (docs/controller.md § Video).
+                        p.text(img.right_bottom() - egui::vec2(10.0, 8.0), Align2::RIGHT_BOTTOM, "weak link: reduced video",
+                            FontId::proportional(18.0), Color32::from_rgb(230, 180, 60));
                     }
                 }
                 None => {
@@ -230,7 +234,7 @@ impl eframe::App for App {
                      received→decoded {:>6}     frame size      {:>5.1} KB\n\
                      decoded→shown    {:>6}     control RTT     {}\n\
                      capture→shown    {:>6}     clock offset    {}\n\
-                     session {:08x}  controls sent {}  pad: {}\n\
+                     session {:08x}  controls sent {}  pad: {}  video level {}\n\
                      axes {:+.2} {:+.2} {:+.2} {:+.2} {:.2} {:.2}  buttons {:#07x}  dropped big {} bad {}",
                     format!("{:.0} ms", v.encode_ms), v.delivered_pct,
                     ms(v.transfer_ms), v.fps,
@@ -239,7 +243,7 @@ impl eframe::App for App {
                     s.rtt.as_ref().map(|r| format!("{:.0} ms (min {:.0})", r.avg_ms, r.min_ms)).unwrap_or("-".into()),
                     ms(v.capture_to_shown_ms),
                     s.clock_offset_us.map(|o| format!("{:+.3} s", o as f64 / 1e6)).unwrap_or("-".into()),
-                    s.session_id, s.controls_sent, if s.has_pad { &s.pad_name } else { "none" },
+                    s.session_id, s.controls_sent, if s.has_pad { &s.pad_name } else { "none" }, v.level,
                     s.axes[0], s.axes[1], s.axes[2], s.axes[3], s.axes[4], s.axes[5], s.buttons,
                     v.dropped_too_big, v.decode_errors,
                 );

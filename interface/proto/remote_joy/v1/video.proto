@@ -15,4 +15,15 @@ message VideoFrame {
   uint32 height                = 5;
   Codec  codec                 = 6;
   bytes  data                  = 7;  // one complete JPEG
+  uint32 level                 = 8;  // adaptive rate level: 0 = configured rate, higher = reduced (minor 1)
+}
+
+// rj/v1/video_feedback: Deck -> robot, best effort, every 200 ms once a VideoFrame has arrived
+// (minor 1). deck_video works out each frame's delay on its own clock from it:
+// arrival of this message - send time of last_frame_id - last_frame_age_us. No clock sync needed.
+message VideoFeedback {
+  fixed32 session_id        = 1;
+  uint32  last_frame_id     = 2;  // newest VideoFrame.frame_id received
+  uint32  last_frame_age_us = 3;  // Deck time from receiving that frame to sending this message
+  uint32  frames_received   = 4;  // VideoFrames received this session (wraps); vs frame_id gaps = loss
 }

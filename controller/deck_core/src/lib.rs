@@ -14,7 +14,9 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
-use deck_msgs::v1::{self, ButtonHint, CameraInfo, ClearStopReply, ClearStopRequest, Control, Info, RobotState, Stop, VideoFrame};
+use deck_msgs::v1::{
+    self, ButtonHint, CameraInfo, ClearStopReply, ClearStopRequest, Control, Info, RobotState, Stop, VideoFeedback, VideoFrame,
+};
 use deck_msgs::{keys, Message};
 use serde_json::json;
 use zenoh::qos::{CongestionControl, Priority, Reliability};
@@ -27,6 +29,8 @@ use profiles::Installed;
 
 pub const SUPPORTED_INTERFACE: u32 = deck_msgs::INTERFACE_VERSION;
 const CONTROL_PERIOD: Duration = Duration::from_millis(20);
+/// rj/v1/video_feedback, once a frame has arrived (docs/interface.md § Key space).
+const FEEDBACK_PERIOD: Duration = Duration::from_millis(200);
 const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 
 static START: OnceLock<Instant> = OnceLock::new();
@@ -87,6 +91,7 @@ struct Links {
     session: zenoh::Session,
     control: zenoh::pubsub::Publisher<'static>,
     stop: zenoh::pubsub::Publisher<'static>,
+    video_feedback: zenoh::pubsub::Publisher<'static>,
     _token: zenoh::liveliness::LivelinessToken,
     _state_sub: zenoh::pubsub::Subscriber<()>,
     _video_sub: zenoh::pubsub::Subscriber<()>,
@@ -379,7 +384,16 @@ impl DeckCore {
             .encoding(zenoh::bytes::Encoding::from(keys::encoding("Stop")))
             .wait()
             .map_err(|e| anyhow!("stop: {e}"))?;
-        Ok(Links { session, control, stop, _token: token, _state_sub: state_sub, _video_sub: video_sub })
+        // InteractiveHigh: the RealTime link (prio 0-2), so it isn't queued behind anything.
+        let video_feedback = session
+            .declare_publisher(keys::VIDEO_FEEDBACK)
+            .congestion_control(CongestionControl::Drop)
+            .priority(Priority::InteractiveHigh)
+            .reliability(Reliability::BestEffort)
+            .encoding(zenoh::bytes::Encoding::from(keys::encoding("VideoFeedback")))
+            .wait()
+            .map_err(|e| anyhow!("video_feedback: {e}"))?;
+        Ok(Links { session, control, stop, video_feedback, _token: token, _state_sub: state_sub, _video_sub: video_sub })
     }
 
     fn on_robot_state(&self, m: RobotState) {
@@ -449,6 +463,7 @@ impl DeckCore {
         let mut input = InputState::new(InputConfig::default());
         let mut seq: u32 = 0;
         let mut next = Instant::now();
+        let mut next_feedback = Instant::now();
         while !self.quit.load(Ordering::SeqCst) {
             let polled = pad.poll();
             let changed = pad.changed();
@@ -493,6 +508,10 @@ impl DeckCore {
                     self.state.lock().unwrap().controls_sent += 1;
                 }
             }
+            if now >= next_feedback {
+                next_feedback = now + FEEDBACK_PERIOD;
+                self.send_video_feedback();
+            }
             if now >= next {
                 next += CONTROL_PERIOD;
                 if next < now {
@@ -501,6 +520,20 @@ impl DeckCore {
             }
             thread::sleep(Duration::from_millis(2));
         }
+    }
+
+    /// Tells deck_video what arrived, so it can adapt its rate (rate_control.hpp). Sent even
+    /// without a gamepad or while STOPPED: it's about the link, not driving.
+    fn send_video_feedback(&self) {
+        let (Some(links), Some(r)) = (self.links.get(), self.video.received()) else { return };
+        let age = self.clock.now_us().saturating_sub(r.last_rx_us);
+        let m = VideoFeedback {
+            session_id: self.session_id,
+            last_frame_id: r.last_frame_id,
+            last_frame_age_us: age.min(u32::MAX as u64) as u32,
+            frames_received: r.count,
+        };
+        let _ = links.video_feedback.put(m.encode_to_vec()).wait();
     }
 
     fn stop(&self, source: &str, now_us: u64) {

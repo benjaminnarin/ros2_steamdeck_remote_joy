@@ -7,6 +7,7 @@ pub const STOP: &str = "rj/v1/stop";
 pub const ROBOT_STATE: &str = "rj/v1/robot_state";
 pub const STATUS: &str = "rj/v1/status";
 pub const VIDEO: &str = "rj/v1/video";
+pub const VIDEO_FEEDBACK: &str = "rj/v1/video_feedback";
 pub const INFO: &str = "rj/v1/info";
 pub const CLEAR_STOP: &str = "rj/v1/clear_stop";
 pub const ACTION_PREFIX: &str = "rj/v1/action";

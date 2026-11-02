@@ -79,6 +79,14 @@ fn video_frame() {
     assert_eq!(f.codec(), video_frame::Codec::Jpeg);
     assert_eq!((f.width, f.height, f.encode_done_offset_us), (480, 270, 4500));
     assert_eq!(f.data, vec![0xff, 0xd8, 0xff, 0xd9]);
+    assert_eq!(f.level, 3);
+}
+
+#[test]
+fn video_feedback() {
+    let f: v1::VideoFeedback = roundtrip("video_feedback");
+    assert_eq!(f.session_id, 0xdec0_ffee);
+    assert_eq!((f.last_frame_id, f.last_frame_age_us, f.frames_received), (4242, 35_000, 4100));
 }
 
 #[test]
@@ -113,6 +121,7 @@ fn keys_match_cpp_header() {
         keys::ROBOT_STATE,
         keys::STATUS,
         keys::VIDEO,
+        keys::VIDEO_FEEDBACK,
         keys::INFO,
         keys::CLEAR_STOP,
         keys::ACTION_PREFIX,

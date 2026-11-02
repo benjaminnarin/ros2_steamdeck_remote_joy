@@ -10,6 +10,7 @@ For each entry: where it would go, why, the evidence we have, what still needs c
 | U2 | [eclipse-zenoh/zenoh](https://github.com/eclipse-zenoh/zenoh) | Feature request | Warn about unknown endpoint options (e.g. `mixed_rel` on a version without it) | No: confirm the behaviour first |
 | U3 | [eclipse-zenoh/zenoh](https://github.com/eclipse-zenoh/zenoh) | Docs | Say that best-effort over QUIC uses streams unless `mixed_rel=1` | Yes, after a recheck |
 | U4 | [eclipse-zenoh/zenoh](https://github.com/eclipse-zenoh/zenoh) | Question or issue | ACL "multiple network interfaces" warning appears even with no interface-based subjects | No: needs a minimal repro |
+| U5 | [eclipse-zenoh/zenoh](https://github.com/eclipse-zenoh/zenoh) | Feature request | QUIC links: `dscp` and the datagram send buffer size as endpoint options | No: check the latest release first |
 
 ---
 
@@ -96,3 +97,19 @@ For each entry: where it would go, why, the evidence we have, what still needs c
   > **Title:** ACL warns "Transport returned multiple network interfaces" when no subject uses `interfaces`
   >
   > With access control enabled and subjects that only use `cert_common_names` / `link_protocols`, a router listening on `quic/0.0.0.0:7450` logs the warning above for each QUIC client on a multi-interface host. If interface matching isn't in use, can the warning be skipped? If it does affect these subjects, what's the risk?
+
+---
+
+## U5: QUIC links: `dscp` and datagram send buffer size
+
+- **Where:** eclipse-zenoh/zenoh, feature request.
+- **Why it matters to us:** best-effort data over QUIC (`mixed_rel=1`) waits in quinn's datagram send buffer, quinn's default **1 MiB**, which Zenoh neither sets nor exposes. At 3 Mbit/s that's seconds of video ahead of anything else on the connection ([devlog § 4.2](devlog.md#42-o19-video-vs-robot-state-on-a-weak-link-2026-11-0102)). We work around it with one link per priority range (`prio=`) and adaptive video. Two knobs would let us shrink the remaining shared-network delay directly:
+  - `dscp` exists for TCP and UDP links (`#dscp=`), not QUIC. With it, Wi-Fi (WMM) could put the RealTime link in a faster access category.
+  - The datagram send buffer size (`quinn::TransportConfig::datagram_send_buffer_size`), so a stale backlog is dropped sooner.
+- **Evidence:** the 1.10.2 `DEFAULT_CONFIG.json5` documents `dscp` only "for TCP/UDP links"; zenoh-link-quic doesn't set `datagram_send_buffer_size` (read in the 1.10.2 source).
+- **Check before filing:** whether a newer release adds either, and whether a socket option set on the QUIC UDP socket (DSCP) survives quinn's own socket setup.
+- **Draft:**
+
+  > **Title:** QUIC links: support `#dscp=` and a configurable datagram send buffer
+  >
+  > With `mixed_rel=1`, best-effort messages use QUIC datagrams, which queue in quinn's datagram send buffer (default 1 MiB, not configurable from Zenoh). On a constrained link that's seconds of data, and the queue is shared by every priority on the link. `prio=` links help by separating the queues, but they still share the network's queue. Could QUIC endpoints accept `#dscp=` (as TCP/UDP do) and an option for `datagram_send_buffer_size`?

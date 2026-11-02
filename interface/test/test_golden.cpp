@@ -50,6 +50,7 @@ TEST(Golden, ClearStopRequest) { check_golden<v1::ClearStopRequest>("clear_stop_
 TEST(Golden, Info) { check_golden<v1::Info>("info"); }
 TEST(Golden, Status) { check_golden<v1::Status>("status"); }
 TEST(Golden, VideoFrame) { check_golden<v1::VideoFrame>("video_frame"); }
+TEST(Golden, VideoFeedback) { check_golden<v1::VideoFeedback>("video_feedback"); }
 
 TEST(Golden, ControlFieldValues) {
   v1::Control c;

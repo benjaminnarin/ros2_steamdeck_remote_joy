@@ -62,13 +62,13 @@
         permission: "allow",
         key_exprs: ["rj/v1/**"],
       },
-      // Decks → robot: control and stop.
+      // Decks → robot: control, stop and video feedback (deck_video adapts its rate).
       {
         id: "deck_send",
         messages: ["put"],
         flows: ["ingress"],
         permission: "allow",
-        key_exprs: ["rj/v1/control", "rj/v1/stop"],
+        key_exprs: ["rj/v1/control", "rj/v1/stop", "rj/v1/video_feedback"],
       },
       // The router tells a Deck where subscribers/queryables are, so the Deck's publishers
       // and queriers know they have somewhere to send.
@@ -77,7 +77,8 @@
         messages: ["declare_subscriber", "declare_queryable"],
         flows: ["egress"],
         permission: "allow",
-        key_exprs: ["rj/v1/control", "rj/v1/stop", "rj/v1/info", "rj/v1/clear_stop", "rj/v1/action/*"],
+        key_exprs: ["rj/v1/control", "rj/v1/stop", "rj/v1/video_feedback", "rj/v1/info", "rj/v1/clear_stop",
+                    "rj/v1/action/*"],
       },
       // Decks query the robot's queryables and get replies.
       {
@@ -138,7 +139,8 @@
   // ── Payload size limits on the Deck link (docs/interface.md § Limits) ──
   low_pass_filter: [
     { id: "deck_small", link_protocols: ["quic"], flows: ["ingress"], messages: ["put", "query"],
-      key_exprs: ["rj/v1/control", "rj/v1/stop", "rj/v1/info", "rj/v1/clear_stop", "rj/v1/action/*"],
+      key_exprs: ["rj/v1/control", "rj/v1/stop", "rj/v1/video_feedback", "rj/v1/info", "rj/v1/clear_stop",
+                  "rj/v1/action/*"],
       size_limit: 1024 },
     { id: "status", link_protocols: ["quic"], flows: ["egress"], messages: ["put"],
       key_exprs: ["rj/v1/status"], size_limit: 65536 },

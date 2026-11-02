@@ -1,0 +1,5 @@
+# message: remote_joy.v1.VideoFeedback
+session_id: 0xdec0ffee
+last_frame_id: 4242
+last_frame_age_us: 35000
+frames_received: 4100

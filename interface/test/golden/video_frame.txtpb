@@ -6,3 +6,4 @@ width: 480
 height: 270
 codec: JPEG
 data: "\xff\xd8\xff\xd9"
+level: 3

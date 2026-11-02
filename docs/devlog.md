@@ -414,6 +414,28 @@ Commits: `8f4f7db` (initial design docs), `2ac8872` (research findings).
 
   The safety behaved correctly. Power saving was on (O16), and the Deck was at −64 dBm. The likely amplifier: all best-effort traffic shares one QUIC datagram FIFO of quinn's default 1 MiB (about 1.7 s of video), which Zenoh doesn't configure, and video has no rate adaptation. To be measured with `tc`.
 
+### 4.2 O19: video vs robot state on a weak link (2026-11-01/02)
+
+- **Setup:** the real gateway (`deck_sim`, 480×360 camera) on the laptop. `tc tbf rate 3mbit burst 32kbit latency 50ms` on its Wi-Fi (`wlp2s0`), so the robot → Deck direction is capped. The Deck is on the same access point. The first runs used `spike/o19/measure.sh`, which runs `deck_spike --v1` headless on the Deck; the last used the Deck app's new `bench` command.
+- **One link, video on:** state RTT 1.6 s, 572 echoes lost, 327 stale. The 3 Mbit/s cap fills quinn's single datagram queue (1 MiB default) with video, and `RobotState` waits behind it.
+- **Zenoh's documented fix: one link per priority range.** `prio=` endpoint metadata plus an `allOf` locator group (a client otherwise stops at the first endpoint that connects) and `transport/unicast/max_links: 2`. QUIC `multistream` (one stream per priority) only covers reliable traffic, not datagrams. `prio=` combines with `mixed_rel=1`, and the access rules (certificate CN, QUIC only) admit both links unchanged.
+
+  | 3 Mbit/s cap | State RTT (avg / p95 / max) | Lost | Stale | Video |
+  |---|---|---|---|---|
+  | 1 link, video | 1597 / 1632 / 1637 ms | 572 | 327 | 9.6 fps, 1.7 Mbps |
+  | 2 links, no video | 6.4 / 11.9 / 32 ms | 0 | 0 | — |
+  | 2 links, video | 50 / 66 / 114 ms | 2 | 0 | 9.2 fps, 1.6 Mbps |
+  | 2 links, adaptive video (`bench`, 45 s) | median 6.9 / p95 47.5 / max 64 ms | — | — | settles at level 2 (15 fps), encoded → received ~47 ms |
+
+- **What's left with two links (~50 ms):** both links share the network's queue (here the 50 ms `tbf` queue; on real Wi-Fi the access point's and driver's). Zenoh's priorities only order its own send queues, and Zenoh has no `dscp` option for QUIC (O4). Hence adaptive video.
+- **Adaptive video:** the Deck reports the newest frame id, its age and a count received (`rj/v1/video_feedback`, 5 Hz). `deck_video` turns that into a frame delay on its own clock and steps a ladder of fps/quality/size ([interface.md § Rules](interface.md#rules)). In the capped run it went 0 → 1 → 2 within 2 s (delays 170 and 354 ms). Later it probed level 1 a few times; each probe failed (loss) within a few seconds and the hold doubled. The RTT p95 of 47 ms comes from those probes.
+- **Interface minor 1:** `VideoFeedback`, `VideoFrame.level`. The router config allows the new key from Decks (≤ 1 KB). `deck_router` now also requires `multistream=1` and `max_links` ≥ 2, and parses endpoint options on `;`. It used to split on `?` and `&`, so `?mixed_rel=1;multistream=1` would have been rejected.
+- **Cap lifted** (Deck at −58 dBm, 400 Mbit/s VHT, power saving **on**):
+  - **Recovery:** from level 2 back to 0 in 13 s (one step per 5 s hold). Frames arrived 7 ms after encoding.
+  - **Over-reaction, fixed:** a ~2 s Wi-Fi loss burst at 25 s (87% delivered, delay never above 150 ms) took it from level 0 to 4 in about 2 s. Each change cleared the loss window, and loss was judged again after only 5 frames, so the same burst counted once per report. Loss now counts only over a full 5-report window (~1 s) after a change. New test: a 2 s burst at 50% loss costs at most 2 steps. It failed on the old code.
+  - **90 s after the fix:** level 0 throughout, 30 fps, frames ~6 ms after encoding; a dip to 91% delivered at 26 s didn't trigger a step. Control RTT median 5.7 ms, p95 7.5 ms, max 17 ms.
+- **Capped again with the loss fix (45 s):** the same as before. It went 0 → 1 → 2 within 2 s (delays 211 and 415 ms) and settled at level 2, with frames ~47 ms after encoding. Its probes of level 1 failed and backed off. Control RTT median 6.9 ms, p95 44.8 ms, max 59.5 ms.
+
 ---
 
 ## How to keep this log

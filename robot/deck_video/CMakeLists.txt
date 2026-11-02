@@ -37,6 +37,8 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_frame_math test/test_frame_math.cpp)
   target_include_directories(test_frame_math PRIVATE include)
+  ament_add_gtest(test_rate_control test/test_rate_control.cpp)
+  target_include_directories(test_rate_control PRIVATE include)
 endif()
 
 ament_package()

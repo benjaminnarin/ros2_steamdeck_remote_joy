@@ -9,7 +9,7 @@
 namespace remote_joy::v1 {
 
 inline constexpr std::uint32_t kInterfaceVersion = 1;
-inline constexpr std::uint32_t kInterfaceMinor = 0;
+inline constexpr std::uint32_t kInterfaceMinor = 1;  // 1: VideoFeedback, VideoFrame.level
 
 namespace keys {
 inline constexpr std::string_view kPrefix = "rj/v1";
@@ -18,6 +18,7 @@ inline constexpr std::string_view kStop = "rj/v1/stop";
 inline constexpr std::string_view kRobotState = "rj/v1/robot_state";
 inline constexpr std::string_view kStatus = "rj/v1/status";
 inline constexpr std::string_view kVideo = "rj/v1/video";
+inline constexpr std::string_view kVideoFeedback = "rj/v1/video_feedback";
 inline constexpr std::string_view kInfo = "rj/v1/info";
 inline constexpr std::string_view kClearStop = "rj/v1/clear_stop";
 inline constexpr std::string_view kActionPrefix = "rj/v1/action";  // + "/<id>"

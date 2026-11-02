@@ -166,6 +166,9 @@ A composable node, `deck_video::VideoPublisher`.
 | `max_width` | `480` | Downscaled, keeping aspect ratio |
 | `fps` | `30` | Upper limit |
 | `jpeg_quality` | `70` | |
+| `adaptive` | `true` | Adapt fps, quality and size to the link from the Decks' `VideoFeedback` |
+| `adapt_high_delay_ms` | `150` | Frame delay that steps the rate down |
+| `adapt_low_delay_ms` | `75` | Frame delay the link must stay under for 5 s to step back up |
 
 Behavior:
 - **On demand:** a Zenoh matching listener on `rj/v1/video` (`Publisher::declare_matching_listener`, part of zenoh-cpp's stable API on the zenoh-c backend). With no Deck subscribed, it unsubscribes from the camera and costs nothing.
@@ -174,7 +177,7 @@ Behavior:
 - **Frames over 512 KB** are dropped with a warning (the router would drop them anyway). Every 5 s it logs images in, frames out, fps and average size.
 - **Timestamps:** capture time converted from the image's ROS `header.stamp` to the monotonic clock (`steady_now − (ros_now − stamp)`), plus capture → encode time, written into `VideoFrame`.
 - About 15–25 KB per frame, roughly 5 Mbps at the defaults (measured: 18–20 KB at 480×360, quality 70).
-- **No rate adaptation yet:** it sends at `fps` regardless of the link (open item O19).
+- **Adaptive rate** (O19; algorithm in [interface.md § Rules](interface.md#rules), code in `rate_control.hpp`): the Decks report what they receive, and the node steps down a ladder when frames queue or get lost, and back up when the link recovers. Levels at the defaults: 30 fps q70 → 20 fps → 15 fps q60 → 10 fps q50 → 6 fps q45 at ⅔ size → 3 fps q40 → 1 fps at ½ size. Level changes and the measured delay are logged, and every frame carries its level. Measured at a 3 Mbit/s cap: it settles at 15 fps with frames ~47 ms after encoding, instead of seconds behind (devlog § 4.2).
 
 ### Camera driver settings
 

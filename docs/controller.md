@@ -60,6 +60,8 @@ controller/
   The robot is STOPPED on arrival (new-owner rule), so the operator sees the camera and the robot's name before clearing STOP.
 - **Reconnect:** after a drop, the app retries automatically (backoff up to 2 s) and shows LINK LOST until it's back. It keeps the same `session_id` for the whole app run. After a short drop the robot is in **REARM** (the banner says "release L2, then press it again"). After a drop over 1 s it's STOPPED (`link_lost`).
 - **`disconnect()`** runs on quit: send `Stop` (reliable), withdraw the liveliness token, close the session. The robot stops and releases control straight away.
+- **Two links:** each profile endpoint becomes one QUIC link per priority band (`prio=0-2` for control, stop, state and video feedback; `prio=3-7` for video and status) in a Zenoh `allOf` group, with `max_links: 2`. Endpoints must carry `mixed_rel=1` and `multistream=1` ([interface.md § Connection](interface.md#connection)).
+- **Video feedback:** every 200 ms once a frame has arrived, the control thread sends `VideoFeedback` (newest frame id, its age, frames received, counted as they arrive), so `deck_video` can adapt its rate. It's sent with or without a gamepad.
 - **Wrong-robot guard:** the robot's name is shown prominently in the top bar, and the STOP-clear prompt names it ("Clear STOP on **mybot**?").
 
 **Extension points**, present in the MVP with one simple implementation each, so post-MVP features slot in ([future.md § Connecting, switching and pairing](future.md#connecting-switching-and-pairing-post-mvp)):
@@ -126,6 +128,8 @@ The top bar can show one "pinned" status item, e.g. robot battery, chosen by the
 
 The video and the STOP button stay visible.
 
+When the robot has lowered the video rate (`VideoFrame.level` > 0), the bottom-right corner of the video says "weak link: reduced video".
+
 | Overlay state | When | Look |
 |---------------|------|------|
 | NO CONTROLLER | No gamepad | Grey, centered message |
@@ -149,6 +153,7 @@ capture→encoded   9 ms     frames received   98.7 %   (gaps in frame_id)
 encoded→received  4 ms     fps               30.0
 received→shown    7 ms     frame size        18 KB
 capture→shown    20 ms     control RTT       6 ms (min 3)   clock offset ±1 ms
+session …  controls sent …  pad: …  video level 0
 ```
 
 This doesn't include camera exposure or driver delay before the capture timestamp. For that, use the glass-to-glass test in [deployment.md](deployment.md#video-tuning).
@@ -193,6 +198,7 @@ steamdeck-remote-joy                          # run the app (what Steam launches
 steamdeck-remote-joy robot add --bundle FILE  # file pairing method; becomes the active robot
 steamdeck-remote-joy robot list | forget NAME
 steamdeck-remote-joy probe                    # connect, print Info, RTT, state, video fps, then exit
+steamdeck-remote-joy bench [--seconds N]      # headless link test: neutral Control, prints RTT, video, level
 steamdeck-remote-joy log [--tail N]           # show the local event log
 ```
 

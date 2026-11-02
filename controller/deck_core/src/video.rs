@@ -50,6 +50,8 @@ pub struct Stats {
     pub show_ms: Option<f64>,
     pub capture_to_shown_ms: Option<f64>,
     pub frames: usize,
+    /// The robot's adaptive rate level of the newest frame (0 = full rate).
+    pub level: u32,
     pub dropped_too_big: u64,
     pub decode_errors: u64,
 }
@@ -105,8 +107,19 @@ impl StatsWindow {
     }
 }
 
+/// What the Deck tells deck_video (rj/v1/video_feedback), counted as frames arrive (before the
+/// decode slot, so frames the decoder skips aren't reported as lost).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Received {
+    pub last_frame_id: u32,
+    pub last_rx_us: u64,
+    pub count: u32,
+}
+
 #[derive(Default)]
 struct Inner {
+    received: Option<Received>,
+    level: u32,
     pending: Option<(VideoFrame, u64, Option<i64>)>,
     latest: Option<Decoded>,
     last_decoded_us: Option<u64>,
@@ -141,6 +154,9 @@ impl Video {
     /// robot_clock - deck_clock, if known.
     pub fn push(&self, f: VideoFrame, received_us: u64, offset_us: Option<i64>) {
         let mut g = self.inner.lock().unwrap();
+        let count = g.received.map_or(0, |r| r.count).wrapping_add(1);
+        g.received = Some(Received { last_frame_id: f.frame_id, last_rx_us: received_us, count });
+        g.level = f.level;
         if f.data.len() > MAX_FRAME_BYTES {
             g.dropped_too_big += 1;
             return;
@@ -209,9 +225,15 @@ impl Video {
         self.inner.lock().unwrap().latest.is_some()
     }
 
+    /// For rj/v1/video_feedback: None until a frame has arrived.
+    pub fn received(&self) -> Option<Received> {
+        self.inner.lock().unwrap().received
+    }
+
     pub fn stats(&self, now_us: u64) -> Stats {
         let mut g = self.inner.lock().unwrap();
         let mut s = g.window.stats(now_us);
+        s.level = g.level;
         s.dropped_too_big = g.dropped_too_big;
         s.decode_errors = g.decode_errors;
         s
@@ -278,5 +300,16 @@ mod tests {
         let g = v.inner.lock().unwrap();
         assert_eq!(g.pending.as_ref().unwrap().0.frame_id, 2, "older pending frame replaced; too-big one dropped");
         assert_eq!(g.dropped_too_big, 1);
+    }
+
+    #[test]
+    fn received_counts_every_arrival() {
+        let v = Video::default();
+        assert_eq!(v.received(), None);
+        let frame = |id, n| VideoFrame { frame_id: id, data: vec![0; n], level: 2, ..Default::default() };
+        v.push(frame(1, 10), 100, None);
+        v.push(frame(3, MAX_FRAME_BYTES + 1), 200, None); // arrived, though too big to decode
+        assert_eq!(v.received(), Some(Received { last_frame_id: 3, last_rx_us: 200, count: 2 }));
+        assert_eq!(v.stats(300).level, 2);
     }
 }

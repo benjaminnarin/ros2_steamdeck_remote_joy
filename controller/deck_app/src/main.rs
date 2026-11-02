@@ -40,6 +40,13 @@ enum Cmd {
         #[arg(long, default_value_t = 3.0)]
         seconds: f64,
     },
+    /// Measure the link headless: neutral Control at 50 Hz (sticks centred, no deadman, so the
+    /// robot stays STOPPED; it takes ownership if no one has it), video received but not shown.
+    /// Prints one line per second, then a summary.
+    Bench {
+        #[arg(long, default_value_t = 20.0)]
+        seconds: f64,
+    },
     /// Show the local event log.
     Log {
         #[arg(long, default_value_t = 30)]
@@ -103,6 +110,7 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
+        Some(Cmd::Bench { seconds }) => bench(&store, log, seconds)?,
         Some(Cmd::Log { tail }) => {
             for l in log.tail(tail) {
                 println!("{l}");
@@ -110,6 +118,61 @@ fn main() -> Result<()> {
         }
         None => run_gui(&store, log, cli.windowed)?,
     }
+    Ok(())
+}
+
+/// A gamepad that's connected and untouched.
+struct NeutralPad;
+impl deck_core::PadSource for NeutralPad {
+    fn poll(&mut self) -> Option<(deck_core::input::RawPad, String)> {
+        Some((Default::default(), "bench".into()))
+    }
+}
+
+fn bench(store: &Store, log: Arc<EventLog>, seconds: f64) -> Result<()> {
+    let profile = store.active()?;
+    let core = DeckCore::start(profile, log, Box::new(|| Box::new(NeutralPad) as Box<dyn deck_core::PadSource>));
+    let start = std::time::Instant::now();
+    let mut rtts: Vec<f64> = Vec::new();
+    let mut levels: Vec<u32> = Vec::new();
+    let mut last_print = 0u64;
+    while start.elapsed().as_secs_f64() < seconds {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let s = core.snapshot();
+        // Ignore the first second: connecting.
+        if start.elapsed().as_secs_f64() >= 1.0 {
+            if let Some(r) = &s.rtt {
+                rtts.push(r.last_ms);
+            }
+            levels.push(s.video.level);
+        }
+        let sec = start.elapsed().as_secs();
+        if sec > last_print {
+            last_print = sec;
+            let v = &s.video;
+            println!(
+                "{sec:>3} s  rtt {:>7}  video {:>4.1} fps {:>5.1} % {:>5.1} KB  encoded→received {:>7}  level {}",
+                s.rtt.as_ref().map(|r| format!("{:.0} ms", r.last_ms)).unwrap_or("-".into()),
+                v.fps,
+                v.delivered_pct,
+                v.avg_kb,
+                v.transfer_ms.map(|x| format!("{x:.0} ms")).unwrap_or("-".into()),
+                v.level,
+            );
+        }
+    }
+    core.shutdown();
+    rtts.sort_by(|a, b| a.total_cmp(b));
+    let pct = |p: f64| rtts.get(((rtts.len() as f64 - 1.0) * p).round() as usize).copied().unwrap_or(f64::NAN);
+    let max_level = levels.iter().max().copied().unwrap_or(0);
+    let final_level = levels.last().copied().unwrap_or(0);
+    println!(
+        "summary: rtt median {:.1} p95 {:.1} max {:.1} ms ({} samples), video level max {max_level} final {final_level}",
+        pct(0.5),
+        pct(0.95),
+        pct(1.0),
+        rtts.len()
+    );
     Ok(())
 }
 
