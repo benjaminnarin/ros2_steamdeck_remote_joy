@@ -109,7 +109,8 @@ def _teleop(context):
     share = get_package_share_directory('deck_gateway')
     return [Node(
         package='teleop_twist_joy', executable='teleop_node', name='teleop_twist_joy_node',
-        parameters=[os.path.join(share, 'config', 'teleop_twist_joy.yaml'),
+        parameters=[LaunchConfiguration('teleop_config').perform(context)
+                    or os.path.join(share, 'config', 'teleop_twist_joy.yaml'),
                     {'publish_stamped_twist': _bool(context, 'cmd_vel_stamped')}],
         remappings=[('cmd_vel', LaunchConfiguration('cmd_vel_topic').perform(context))])]
 
@@ -153,6 +154,8 @@ def generate_launch_description():
                               default_value=os.path.join(share, 'config', 'gateway.yaml')),
         DeclareLaunchArgument('use_router', default_value='true'),
         DeclareLaunchArgument('use_teleop', default_value='true'),
+        DeclareLaunchArgument('teleop_config', default_value='',
+                              description='teleop_twist_joy parameters (default: config/teleop_twist_joy.yaml)'),
         DeclareLaunchArgument('use_video', default_value='true'),
         DeclareLaunchArgument('image_topic', default_value='/camera/image_raw'),
         DeclareLaunchArgument('video_container', default_value='',

@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>deck_turtlebot</name>
+  <version>0.1.0</version>
+  <description>Steam Deck remote joy on a TurtleBot 1: iRobot Create 1 base (create_robot) and a RealSense D455 for video.</description>
+  <maintainer email="bnninit@gmail.com">Benjamin Narin</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>deck_gateway</exec_depend>
+  <exec_depend>deck_video</exec_depend>
+  <exec_depend>realsense2_camera</exec_depend>
+  <!-- create_bringup/create_driver: the Lyrical port in a separate overlay (~/create_ws), not released -->
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

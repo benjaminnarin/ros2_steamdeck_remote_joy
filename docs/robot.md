@@ -52,6 +52,11 @@ robot/deck_sim/                  # ament_python: development and CI without a re
 ├── deck_sim/model.py            # ROS-free battery/odometry models (pytest)
 ├── config/gateway_sim.yaml      # gateway status items, actions and hints matching the sim
 └── launch/sim.launch.py
+
+robot/deck_turtlebot/            # ament_cmake: the TurtleBot 1 (iRobot Create 1 base + RealSense D455)
+├── config/gateway_turtlebot.yaml  # status items for the create driver's topics
+├── config/teleop_turtlebot.yaml   # Create speeds: 0.2 m/s, turbo 0.4 m/s
+└── launch/turtlebot.launch.py
 ```
 
 ## Network
@@ -217,6 +222,7 @@ Speeds are placeholders. The parameter names were confirmed on Lyrical in the M0
 | `gateway_config` | installed `config/gateway.yaml` | |
 | `use_router` | `true` | `false` to use a router started elsewhere (local endpoint `tcp/127.0.0.1:7451`) |
 | `use_teleop`, `use_video` | `true` | |
+| `teleop_config` | installed `config/teleop_twist_joy.yaml` | `teleop_twist_joy` parameters: the speeds for your robot |
 | `cmd_vel_topic` | `cmd_vel` | |
 | `cmd_vel_stamped` | `true` | sets `teleop_twist_joy`'s `publish_stamped_twist` |
 | `image_topic`, `video_container` | `/camera/image_raw`, none | for `deck_video` (M2) |
@@ -233,11 +239,24 @@ Speeds are placeholders. The parameter names were confirmed on Lyrical in the M0
 | `hold [s] [buttons_hex]` | send a button mask without clearing (e.g. as a second Deck: BUSY) |
 | `stop`, `clear`, `watch [s]` | publish `rj/v1/stop`; neutral + `clear_stop`; print state changes |
 
-**Drive base (not chosen yet, open item O13).** `cmd_vel_stamped` sets `teleop_twist_joy`'s `publish_stamped_twist`:
+**Drive base (O13).** `cmd_vel_stamped` sets `teleop_twist_joy`'s `publish_stamped_twist`:
 - `true` for ros2_control `diff_drive_controller` (`TwistStamped`);
 - `false` for a custom driver taking `Twist`.
 
 Either way the base must zero velocity on stale commands (e.g. `cmd_vel_timeout`) and enforce a hard speed limit (e.g. the controller's velocity limits) that doesn't depend on the teleop scales.
+
+### TurtleBot 1
+
+The first real robot: an iRobot Create 1 base on a USB-serial adapter (`/dev/ttyUSB0`) and a RealSense D455, with this repo's robot side on the laptop riding on it.
+
+```bash
+source /opt/ros/lyrical/setup.bash && source ~/create_ws/install/setup.bash && source install/setup.bash
+ros2 launch deck_turtlebot turtlebot.launch.py [base:=true] [camera:=true] [depth:=false]
+```
+
+- **Base:** AutonomyLab's `create_robot` driver, from a Lyrical port built in a separate workspace (`~/create_ws`, not released). It takes plain `Twist` on `/cmd_vel` (`cmd_vel_stamped:=false`), stops the wheels when commands are silent for `latch_cmd_duration` (0.2 s), and the Create itself tops out at 0.5 m/s. Publishes `odom`, `battery/*` (`std_msgs/Float32`; `charge_ratio` is 0–1) and `/diagnostics`.
+- **Camera:** `realsense2_camera` (`ros-lyrical-realsense2-camera`) as a component in `camera_container`, colour only at 640×480 and 30 fps on `/camera/color/image_raw`. `deck_video` loads into the same container (`video_container`), so frames don't cross DDS. `depth:=true` adds depth aligned to colour, for other robot nodes.
+- **Tested 2026-11-02:** drive and video from the Deck over Wi-Fi worked first time. The robot name comes from the pairing state (`robot_name` in `pairing.json`, set on first pairing with `pair --robot-name`), so a robot paired as the sim still shows "deck_sim".
 
 ## Simulation
 

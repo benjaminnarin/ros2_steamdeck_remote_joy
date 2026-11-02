@@ -7,8 +7,9 @@ The resume point between work sessions. Update it when stopping; delete entries 
 ## Where we are
 
 - **M0, M1, M2 done.** O19 (video delaying `RobotState` on a weak link) is answered: two QUIC links per Deck (`prio=0-2`, `prio=3-7`) plus adaptive video from the Deck's `VideoFeedback` (devlog § 4.2).
+- **Real robot:** the TurtleBot 1 (Create 1 base + RealSense D455) drives with video from the Deck: `ros2 launch deck_turtlebot turtlebot.launch.py` (robot.md § TurtleBot 1; source `~/create_ws` first). This laptop is the robot computer.
 - Recent extras: Steam Library artwork (`controller/assets/steam/`), and `camera:=webcam` in the sim (`deck_sim/webcam.py`).
-- `main` is clean and pushed (last commit `d5992e7`).
+- `main` is pushed; see `git log` for the last commit.
 - **Dev setup:** pairing state lives in `~/.config/deck_gateway/` (no shims). Run the sim with
   `source install/setup.bash && ros2 launch deck_sim sim.launch.py camera:=webcam` (or `camera:=true` for the test pattern).
 - **Next up: M3 Status.** A design review is written below but **not yet discussed with the user**. Go through it with them first; nothing below has been applied to the docs or code.
@@ -54,10 +55,15 @@ Then: update interface.md, robot.md, controller.md and `status.proto`, and build
 
 ### Open items ([architecture.md](architecture.md#open-items-to-resolve-in-m0-or-during-build))
 - [ ] **O16**: re-measure Wi-Fi delay spikes with power saving off on the Deck and robot.
-- [ ] **O13**: choose the drive stack (`diff_drive_controller` vs custom driver) before the real robot.
 - [ ] **O4**: DSCP for QUIC (nftables fallback on UDP 7450); upstream draft U5.
 - [ ] **O7**: confirm the trigger sign on hardware (marked "M1 quick check"; check whether it was done and close it).
 - [ ] **O5 / O17**: on each `zenoh_cpp_vendor` release, check for zenoh-c ≥ 1.10.2 with `quinn-proto` ≥ 0.11.18, and switch back from `deck_router` to `rmw_zenohd` when it ships.
+
+### TurtleBot
+- [ ] Rename the robot from "deck_sim" to "turtlebot": the name is `robot_name` in `~/.config/deck_gateway/pairing.json`, set on first pairing (`pair --robot-name`). Check whether editing it is enough or the Deck's profile needs a fresh pairing.
+- [ ] M3 status on the TurtleBot: battery is `std_msgs/Float32` `charge_ratio` (0–1), so the Float32 reader needs a `scale` (×100) as well as BatteryState; `create_driver` also publishes `/diagnostics`.
+- [ ] Robot actions for M4: the driver's `dock`/`undock` are `std_msgs/Empty` topics, not services, so they need a topic-publishing action type or a small service wrapper.
+- [ ] A field test on the robot: weak-link video and the adaptive rate on the real camera.
 
 ### Housekeeping
 - [ ] Allow list: the old certificate `deck1-2e43e9` / `dev-3b3464` may still be allowed. `pair --revoke deck1` would also revoke the current deck1 certificate, so either re-pair after revoking or add revoke-by-CN. Check with `pair --list`.

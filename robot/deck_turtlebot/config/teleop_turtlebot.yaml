@@ -1,0 +1,19 @@
+# teleop_twist_joy for the TurtleBot 1 (iRobot Create 1: about 0.5 m/s top speed, 0.26 m between
+# the wheels). Same Deck layout as deck_gateway's teleop_twist_joy.yaml; only the speeds differ.
+teleop_twist_joy_node:
+  ros__parameters:
+    require_enable_button: true
+    enable_button: 21         # "deadman held", made by deck_gateway (default deadman: L2 trigger)
+    enable_turbo_button: 10   # RB: deck_gateway only passes it while the deadman is held
+    axis_linear:
+      x: 1                    # left stick Y
+    scale_linear:
+      x: 0.2
+    scale_linear_turbo:
+      x: 0.4
+    axis_angular:
+      yaw: 2                  # right stick X (left = +)
+    scale_angular:
+      yaw: 1.0
+    scale_angular_turbo:
+      yaw: 2.0

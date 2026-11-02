@@ -1,0 +1,19 @@
+# deck_gateway on the TurtleBot 1 (docs/robot.md § Configuration). robot_name is overridden by
+# the pairing state (pairing.json) when there is one.
+# Status items are for M3 (not published yet): the create driver publishes battery/* as
+# std_msgs/Float32 (charge_ratio is 0..1), odom and /diagnostics.
+deck_gateway:
+  ros__parameters:
+    robot_name: turtlebot
+    watchdog_ms: 250
+    resume_grace_ms: 1000
+    max_control_delay_ms: 150
+    deadman: LT
+    status_rate_hz: 2.0
+    status_items: |
+      - {key: battery.ratio, label: Battery, topic: /battery/charge_ratio, type: Float32,
+         field: data, group: Power, pin: true}
+      - {key: battery.v, label: Voltage, topic: /battery/voltage, type: Float32, field: data,
+         unit: V, group: Power}
+      - {key: speed, label: Speed, topic: /odom, type: Odometry, field: speed, unit: m/s, group: Motion}
+      - {key: diagnostics, topic: /diagnostics, type: DiagnosticArray}
