@@ -47,7 +47,7 @@ controller/
 
 `deck_core` holds everything that matters for safety and networking, so the UI could be replaced later without touching it.
 
-**Dev deploy** (until M5 packaging): `controller/scripts/deploy_deck.sh [deck@steamdeck]` builds here and copies the binary, `run.sh` and the `.desktop` to `~/steamdeck-remote-joy` on the Deck. `BUNDLE=<file>` also runs `robot add --bundle`, and `ADD_TO_STEAM=1` adds the Non-Steam Game entry.
+**Dev deploy** (until M5 packaging): `controller/scripts/deploy_deck.sh [deck@steamdeck]` builds here and copies the binary, `run.sh` and the `.desktop` to `~/steamdeck-remote-joy` on the Deck. `BUNDLE=<file>` also runs `robot add --bundle`, and `ADD_TO_STEAM=1` adds the Non-Steam Game entry. Every deploy also installs the Library artwork (a little TurtleBot-style robot; `controller/assets/steam/`, drawn by `make_art.py`) into Steam's grid folder for that entry with `scripts/steam_art.py`. Steam shows it after a restart. The icon is only set while Steam is closed, because Steam rewrites `shortcuts.vdf` from memory.
 
 ## Connection
 

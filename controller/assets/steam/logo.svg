@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1726"/><stop offset="1" stop-color="#143049"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3fd6cc" stop-opacity="0.28"/><stop offset="1" stop-color="#3fd6cc" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="baseSide" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1f232a"/><stop offset="0.45" stop-color="#3a414b"/><stop offset="1" stop-color="#1c2026"/>
+    </linearGradient>
+    <linearGradient id="plateSide" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8f99a5"/><stop offset="0.45" stop-color="#cfd6de"/><stop offset="1" stop-color="#848e9a"/>
+    </linearGradient>
+    <linearGradient id="lidarSide" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#14171c"/><stop offset="0.45" stop-color="#2f353e"/><stop offset="1" stop-color="#121418"/>
+    </linearGradient>
+    <linearGradient id="deckBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2f38"/><stop offset="1" stop-color="#171a20"/>
+    </linearGradient>
+  </defs><text x="640" y="220" font-family="Noto Sans, DejaVu Sans, sans-serif" font-weight="800" font-size="170" fill="#f2f6fa" text-anchor="middle" letter-spacing="1.7">Remote <tspan fill="#3fd6cc">Joy</tspan></text></svg>

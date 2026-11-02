@@ -173,6 +173,7 @@ Steam identifies a Non-Steam Game by its target path and name, and ties the cont
 3. **Add to Steam only once, using the `.desktop` file.** `steamos-add-to-steam` rejects a bare script or binary when run over SSH ("Unsupported file type", because `kmimetypefinder` can't classify it there), but a `.desktop` entry always works (verified in M0). Run it only if no shortcut for the launch path exists yet (search for it in `~/.steam/steam/userdata/*/config/shortcuts.vdf`). Otherwise you get a duplicate entry with no layout.
 4. **Keep the previous two versions** for rollback.
 5. **Be safe to re-run.**
+6. **Install the Library artwork** for the entry: `controller/scripts/steam_art.py` copies `controller/assets/steam/*.png` into `userdata/<user>/config/grid/` under the shortcut's appid (portrait and landscape capsules, hero, logo, icon), and sets the shortcut's icon while Steam is closed.
 
 *Future: Flatpak packaging ([future.md](future.md#flatpak-packaging)).*
 
