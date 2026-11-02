@@ -116,11 +116,25 @@ pub fn validate(config: &Config) -> Result<(), String> {
         return Err("listen/endpoints is empty".into());
     }
     for ep in list.iter().filter(|e| e.starts_with("quic/")) {
+        // Endpoint metadata: quic/<addr>?k=v;k=v#config.
+        let meta = ep.split('#').next().unwrap_or("").split_once('?').map_or("", |(_, m)| m);
+        let has = |opt: &str| meta.split(';').any(|p| p == opt);
         // Without mixed_rel=1, best-effort data rides QUIC streams and stalls replay stale
         // control and video (M0, O3). Zenoh would accept the endpoint without complaint.
-        if !ep.split(['?', '&']).any(|p| p == "mixed_rel=1") {
+        if !has("mixed_rel=1") {
             return Err(format!("{ep}: QUIC endpoints must include mixed_rel=1 (docs/interface.md § Connection)"));
         }
+        // One QUIC stream per priority for reliable keys (stop, queries), so they don't queue
+        // behind each other. The default (auto) negotiates it too, but we don't rely on that.
+        if !has("multistream=1") {
+            return Err(format!("{ep}: QUIC endpoints must include multistream=1 (docs/interface.md § Connection)"));
+        }
+    }
+    // Each Deck opens one link per priority band; with max_links 1 the second is refused and
+    // video shares the RealTime link's datagram queue again (O19).
+    let max_links: u64 = serde_json::from_value(get("transport/unicast/max_links")?).map_err(|e| format!("transport/unicast/max_links: {e}"))?;
+    if max_links < 2 {
+        return Err(format!("transport/unicast/max_links is {max_links}: needs at least 2 (docs/interface.md § Connection)"));
     }
     Ok(())
 }
@@ -155,12 +169,17 @@ mod tests {
     }
 
     #[test]
-    fn requires_router_mode_and_mixed_rel() {
-        assert!(validate(&cfg(r#"{mode: "router", listen: {endpoints: ["quic/0.0.0.0:7450?mixed_rel=1", "tcp/127.0.0.1:7451"]}}"#)).is_ok());
-        let e = validate(&cfg(r#"{mode: "router", listen: {endpoints: ["quic/0.0.0.0:7450"]}}"#)).unwrap_err();
+    fn requires_router_mode_mixed_rel_multistream_and_two_links() {
+        let ok = |eps: &str| validate(&cfg(&format!(r#"{{mode: "router", transport: {{unicast: {{max_links: 2}}}}, listen: {{endpoints: {eps}}}}}"#)));
+        assert!(ok(r#"["quic/0.0.0.0:7450?mixed_rel=1;multistream=1", "tcp/127.0.0.1:7451"]"#).is_ok());
+        assert!(ok(r#"["quic/0.0.0.0:7450?multistream=1;rel=0;mixed_rel=1#bind=0.0.0.0:0"]"#).is_ok());
+        let e = ok(r#"["quic/0.0.0.0:7450"]"#).unwrap_err();
         assert!(e.contains("mixed_rel=1"), "{e}");
-        assert!(validate(&cfg(r#"{mode: "router", listen: {endpoints: ["quic/0.0.0.0:7450?rel=0"]}}"#)).is_err());
-        assert!(validate(&cfg(r#"{mode: "router", listen: {endpoints: ["quic/0.0.0.0:7450?rel=0&mixed_rel=1"]}}"#)).is_ok());
+        let e = ok(r#"["quic/0.0.0.0:7450?mixed_rel=1"]"#).unwrap_err();
+        assert!(e.contains("multistream=1"), "{e}");
+        assert!(ok(r#"["quic/0.0.0.0:7450?mixed_rel=10;multistream=1"]"#).is_err());
+        let e = validate(&cfg(r#"{mode: "router", listen: {endpoints: ["quic/0.0.0.0:7450?mixed_rel=1;multistream=1"]}}"#)).unwrap_err();
+        assert!(e.contains("max_links"), "{e}");
         assert!(validate(&cfg(r#"{mode: "client", connect: {endpoints: ["tcp/127.0.0.1:7451"]}}"#)).is_err());
     }
 }

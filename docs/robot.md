@@ -61,13 +61,13 @@ robot/deck_sim/                  # ament_python: development and CI without a re
 
 ## Zenoh router
 
-- Listens on `quic/0.0.0.0:7450?mixed_rel=1` (TLS, client certificates required; `mixed_rel=1` is mandatory, see [interface.md § Connection](interface.md#connection)) for Decks, and on `tcp/127.0.0.1:7451` for the local processes.
+- Listens on `quic/0.0.0.0:7450?mixed_rel=1;multistream=1` (TLS, client certificates required; `mixed_rel=1` is mandatory, see [interface.md § Connection](interface.md#connection)) for Decks, with `transport/unicast/max_links: 2` (each Deck opens one link per priority band), and on `tcp/127.0.0.1:7451` for the local processes.
 - Access control as in [interface.md § Security](interface.md#security). Payload size limits per key.
 - Multicast scouting off. It's a separate key space from any `rmw_zenoh` router the robot may run for ROS itself (that one uses 7447 by default).
 - Started by the launch file and respawned if it exits.
 - Binary: **`deck_router`** (`robot/deck_router`), started with `ZENOH_ROUTER_CONFIG_URI=<share>/config/router.json5` and the TLS file paths in `ZENOH_CONFIG_OVERRIDE` (`key=value;...`), the same interface as `rmw_zenohd`. It's a separate process and port from any `rmw_zenohd` the robot runs for ROS itself.
   - **Why not `rmw_zenohd`:** it reads the same config, but every current ROS zenoh-c locks `quinn-proto` 0.11.17, which crashes the router under Wi-Fi load with `mixed_rel=1` (O17). `deck_router` is built from crates.io Zenoh 1.10.2 with `cargo --locked`, and a test fails the build if `quinn-proto` is older than 0.11.18. Switching back is a launch file change.
-  - It refuses to start in anything but router mode, or with a QUIC endpoint missing `mixed_rel=1`. `deck_router --check <file>` validates a config without starting.
+  - It refuses to start in anything but router mode, with a QUIC endpoint missing `mixed_rel=1` or `multistream=1`, or with `max_links` below 2. `deck_router --check <file>` validates a config without starting.
 - `router.json5`: 2 s lease, `access_control` by `cert_common_names`, `low_pass_filter` size limits per key, and on the robot an optional `nftables` rule that marks outgoing UDP 7450 with DSCP (open item O4).
 
 ## `deck_gateway`

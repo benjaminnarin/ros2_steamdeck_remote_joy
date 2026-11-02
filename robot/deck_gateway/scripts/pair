@@ -299,7 +299,7 @@ def cmd_pair(store: Store, args):
         cn = f'{args.deck}-{secrets.token_hex(3)}'
     key, cert = issue(ca_key, ca_cert, cn, CLIENT_YEARS, server=False)
 
-    endpoints = [f'quic/{h}:{PORT}?mixed_rel=1' for h in (args.host or store.state['hosts'])]
+    endpoints = [f'quic/{h}:{PORT}?mixed_rel=1;multistream=1' for h in (args.host or store.state['hosts'])]
     rid = robot_id(ca_cert)
     toml = (
         '# Steam Deck remote joy robot profile, written by `pair`.\n'

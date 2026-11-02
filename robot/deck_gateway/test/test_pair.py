@@ -78,7 +78,7 @@ def test_first_pairing_creates_ca_server_and_bundle(tmp_path):
     toml = files['robot.toml'][0].decode()
     rid = hashlib.sha256(ca.public_bytes(serialization.Encoding.DER)).hexdigest()
     assert f'id = "{rid}"' in toml
-    assert '"quic/192.168.1.50:7450?mixed_rel=1"' in toml
+    assert '"quic/192.168.1.50:7450?mixed_rel=1;multistream=1"' in toml
     assert 'name = "mybot"' in toml
     assert f'cn = "{cn}"' in toml
 

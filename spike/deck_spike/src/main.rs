@@ -38,6 +38,13 @@ struct Args {
     /// Explicit endpoints (repeatable), e.g. "quic/192.168.1.131:7450?rel=0".
     #[arg(long)]
     connect: Vec<String>,
+    /// Raw Zenoh config override (repeatable), KEY=JSON5, applied last, e.g.
+    /// 'transport/unicast/max_links=2'.
+    #[arg(long, value_name = "KEY=JSON5")]
+    zcfg: Vec<String>,
+    /// File of --zcfg lines (KEY=JSON5 per line; blank lines and # comments skipped).
+    #[arg(long)]
+    zcfg_file: Option<PathBuf>,
     /// Directory with ca.pem, deck.pem, deck.key.
     #[arg(long, default_value = "certs")]
     certs: PathBuf,
@@ -71,6 +78,9 @@ struct Args {
     /// B = STOP, View+Menu 1 s = clear STOP. Implies --v1-keys.
     #[arg(long)]
     v1: bool,
+    /// Don't subscribe to video (with --v1, deck_video then sends nothing: O19 baseline).
+    #[arg(long)]
+    no_video: bool,
 }
 
 /// What the control thread last read from the gamepads.
@@ -134,12 +144,22 @@ fn main() -> Result<()> {
         args.connect.clone()
     };
     let tls = if args.no_tls { None } else { Some(Tls::from_dir(&args.certs, "deck")?) };
-    let config = zenoh_config(&ConfigOpts {
+    let mut config = zenoh_config(&ConfigOpts {
         role: Role::Deck,
         endpoints: &endpoints,
         tls: tls.as_ref(),
         lease_ms: args.lease_ms,
     })?;
+    let mut zcfg = args.zcfg.clone();
+    if let Some(f) = &args.zcfg_file {
+        let text = std::fs::read_to_string(f)?;
+        zcfg.extend(text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(String::from));
+    }
+    for kv in &zcfg {
+        let (k, v) = kv.split_once('=').ok_or_else(|| anyhow::anyhow!("--zcfg wants KEY=JSON5: {kv}"))?;
+        config.insert_json5(k, v).map_err(|e| anyhow::anyhow!("--zcfg {k}={v}: {e}"))?;
+        println!("deck_spike: config {k} = {v}");
+    }
     println!("deck_spike: connecting to {endpoints:?} (tls: {}), keys {keys:?}", tls.is_some());
     let session = z(zenoh::open(config).wait())?;
 
@@ -167,7 +187,7 @@ fn main() -> Result<()> {
             .wait())?
     };
 
-    let _video_sub = {
+    let _video_sub = if args.no_video { None } else { Some({
         let (shared, clock) = (shared.clone(), clock.clone());
         z(session
             .declare_subscriber(keys.video)
@@ -181,7 +201,7 @@ fn main() -> Result<()> {
                 }
             })
             .wait())?
-    };
+    }) };
 
     spawn_decoder(shared.clone());
 

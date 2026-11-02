@@ -18,7 +18,7 @@ const CA: &str = "-----BEGIN CERTIFICATE-----\nAAECAwQFBgcICQ==\n-----END CERTIF
 
 fn bundle(dir: &std::path::Path, id: &str) -> PathBuf {
     let toml = format!(
-        "[robot]\nname = \"mybot\"\nid = \"{id}\"\nendpoints = [\"quic/10.0.0.5:7450?mixed_rel=1\"]\n\n[deck]\nname = \"deck1\"\ncn = \"deck1-abcdef\"\n"
+        "[robot]\nname = \"mybot\"\nid = \"{id}\"\nendpoints = [\"quic/10.0.0.5:7450?mixed_rel=1;multistream=1\"]\n\n[deck]\nname = \"deck1\"\ncn = \"deck1-abcdef\"\n"
     );
     let path = dir.join("b.tar");
     let mut b = tar::Builder::new(std::fs::File::create(&path).unwrap());

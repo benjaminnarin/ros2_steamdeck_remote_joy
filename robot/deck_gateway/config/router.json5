@@ -15,8 +15,9 @@
 
   listen: {
     endpoints: [
-      // Decks: QUIC + mTLS. mixed_rel=1 puts best-effort keys on QUIC datagrams (M0, O3).
-      "quic/0.0.0.0:7450?mixed_rel=1",
+      // Decks: QUIC + mTLS. mixed_rel=1 puts best-effort keys on QUIC datagrams (M0, O3);
+      // multistream=1 gives reliable keys one QUIC stream per priority.
+      "quic/0.0.0.0:7450?mixed_rel=1;multistream=1",
       // deck_gateway and deck_video only. Loopback, so not reachable from the network.
       "tcp/127.0.0.1:7451",
     ],
@@ -28,6 +29,9 @@
   },
 
   transport: {
+    // Each Deck opens one link per priority band (prio=0-2 and 3-7, docs/interface.md
+    // § Connection), so queued video can't delay RobotState (O19).
+    unicast: { max_links: 2 },
     link: {
       tx: {
         lease: 2000,     // ms: notice a vanished Deck within ~2 s (O15)

@@ -143,16 +143,56 @@ pub fn session_id(clock: &Clock) -> u32 {
     ((mixed >> 32) as u32) | 1
 }
 
+/// Priority bands, one QUIC link each (docs/interface.md § Connection). Each link has its own
+/// QUIC datagram queue, so a backlog of video (InteractiveLow) can't delay RobotState
+/// (RealTime). Measured at 3 Mbit/s with video: state RTT 1.6 s on one link, 50 ms on two (O19).
+pub const LINK_BANDS: [&str; 2] = ["0-2", "3-7"];
+
+/// One profile endpoint → one link per priority band.
+pub fn link_endpoints(ep: &str) -> Result<Vec<String>> {
+    let (locator, config) = match ep.split_once('#') {
+        Some((l, c)) => (l, Some(c)),
+        None => (ep, None),
+    };
+    let (addr, meta) = locator.split_once('?').unwrap_or((locator, ""));
+    let opts: Vec<&str> = meta.split(';').filter(|o| !o.is_empty()).collect();
+    if opts.iter().any(|o| o.starts_with("prio=")) {
+        return Err(anyhow!("{ep}: don't set prio= in a profile; the Deck adds one link per priority band"));
+    }
+    if ep.starts_with("quic/") {
+        for need in ["mixed_rel=1", "multistream=1"] {
+            if !opts.contains(&need) {
+                return Err(anyhow!("{ep}: QUIC endpoints need {need} (docs/interface.md § Connection)"));
+            }
+        }
+    }
+    Ok(LINK_BANDS
+        .iter()
+        .map(|band| {
+            let mut e = format!("{addr}?{};prio={band}", opts.join(";"));
+            e = e.replace("?;", "?");
+            if let Some(c) = config {
+                e = format!("{e}#{c}");
+            }
+            e
+        })
+        .collect())
+}
+
 pub fn zenoh_config(profile: &Installed) -> Result<zenoh::Config> {
     let mut c = zenoh::Config::default();
     let mut set = |k: &str, v: String| c.insert_json5(k, &v).map_err(|e| anyhow!("config {k}={v}: {e}"));
-    for ep in &profile.profile.endpoints {
-        if ep.starts_with("quic/") && !ep.contains("mixed_rel=1") {
-            return Err(anyhow!("{ep}: QUIC endpoints need ?mixed_rel=1 (docs/interface.md § Connection)"));
-        }
-    }
+    // A client connects to one robot address. An allOf group opens every link in it to that
+    // address; the next group (another address for the same robot) is only a fallback.
+    let groups = profile
+        .profile
+        .endpoints
+        .iter()
+        .map(|ep| Ok(json!({"strategy": "allOf", "locators": link_endpoints(ep)?})))
+        .collect::<Result<Vec<_>>>()?;
     set("mode", "\"client\"".into())?;
-    set("connect/endpoints", serde_json::to_string(&profile.profile.endpoints)?)?;
+    set("connect/endpoints", serde_json::to_string(&groups)?)?;
+    set("transport/unicast/max_links", LINK_BANDS.len().to_string())?;
     set("connect/retry", "{period_init_ms: 200, period_max_ms: 1000, period_increase_factor: 1.5}".into())?;
     set("connect/exit_on_failure", "false".into())?;
     set("connect/timeout_ms", "-1".into())?;
@@ -564,4 +604,25 @@ pub fn probe(profile: &Installed, secs: f64) -> Result<ProbeResult> {
     let id_ok = info.as_ref().is_some_and(|i| profiles::hex(&i.robot_id) == profile.profile.id);
     let _ = session.close().wait();
     Ok(ProbeResult { info, info_ms, states, last_state, id_ok })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::link_endpoints;
+
+    #[test]
+    fn link_endpoints_split_by_priority_band() {
+        assert_eq!(
+            link_endpoints("quic/10.0.0.5:7450?mixed_rel=1;multistream=1").unwrap(),
+            ["quic/10.0.0.5:7450?mixed_rel=1;multistream=1;prio=0-2", "quic/10.0.0.5:7450?mixed_rel=1;multistream=1;prio=3-7"]
+        );
+        assert_eq!(
+            link_endpoints("quic/h:7450?multistream=1;mixed_rel=1#bind=0.0.0.0:0").unwrap()[1],
+            "quic/h:7450?multistream=1;mixed_rel=1;prio=3-7#bind=0.0.0.0:0"
+        );
+        assert_eq!(link_endpoints("tcp/127.0.0.1:7451").unwrap()[0], "tcp/127.0.0.1:7451?prio=0-2");
+        assert!(link_endpoints("quic/h:7450?multistream=1").unwrap_err().to_string().contains("mixed_rel=1"));
+        assert!(link_endpoints("quic/h:7450?mixed_rel=1").unwrap_err().to_string().contains("multistream=1"));
+        assert!(link_endpoints("quic/h:7450?mixed_rel=1;multistream=1;prio=1").is_err());
+    }
 }
